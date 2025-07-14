@@ -42,46 +42,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [error, setError] = useState<string | null>(null);
 
   // Helper functions
-  const fetchAuthorizedUsers = useCallback(async (): Promise<string[]> => {
-    if (!AUTHORIZED_USERS_GIST_ID) return [];
-
-    try {
-      const response = await fetch(`https://api.github.com/gists/${AUTHORIZED_USERS_GIST_ID}`);
-      if (!response.ok) return [];
-
-      const gist = await response.json();
-      const content = Object.values(gist.files)[0] as any;
-      
-      if (content && content.content) {
-        return JSON.parse(content.content);
-      }
-      
-      return [];
-    } catch {
-      return [];
-    }
-  }, []);
-
-  const checkAuthorization = useCallback(async (username: string): Promise<boolean> => {
-    try {
-      // Option 1: Static list (simple)
-      if (AUTHORIZED_USERS.includes(username)) {
-        return true;
-      }
-
-      // Option 2: Dynamic list from GitHub Gist (more flexible)
-      if (AUTHORIZED_USERS_GIST_ID) {
-        const authorizedUsers = await fetchAuthorizedUsers();
-        return authorizedUsers.includes(username);
-      }
-
-      return false;
-    } catch (error) {
-      console.error('Authorization check failed:', error);
-      return false;
-    }
-  }, [fetchAuthorizedUsers]);
-
   const fetchUserProfile = useCallback(async (token: string): Promise<GitHubUser | null> => {
     try {
       const response = await fetch('https://api.github.com/user', {
@@ -142,7 +102,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check for OAuth callback (PKCE authorization code flow)
+      // Check for OAuth callback (authorization code flow)
       const urlParams = new URLSearchParams(window.location.search);
       const authCode = urlParams.get('code');
       const receivedState = urlParams.get('state');
@@ -202,8 +162,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             if (userData) {
               setUser(userData);
               setIsAuthenticated(true);
-              const authorized = await checkAuthorization(userData.login);
-              setIsAuthorized(authorized);
               
               // Store auth state
               localStorage.setItem('github_auth_token', tokenData.access_token);
@@ -227,9 +185,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const userData = JSON.parse(storedUser);
           setUser(userData);
           setIsAuthenticated(true);
-          const authorized = await checkAuthorization(userData.login);
-          setIsAuthorized(authorized);
         }
+      }
+
+      // Always check with backend if user is authorized
+      const response = await fetch('/auth/user', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setIsAuthorized(true);
+        setUser(data.user);
+      } else {
+        setIsAuthorized(false);
+        setUser(null);
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -237,7 +204,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [checkAuthorization, fetchUserProfile]);
+  }, [fetchUserProfile]);
 
   useEffect(() => {
     initializeAuth();

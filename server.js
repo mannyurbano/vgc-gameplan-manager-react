@@ -67,7 +67,14 @@ app.get('/auth/logout', (req, res) => {
 
 app.get('/auth/user', (req, res) => {
   if (req.isAuthenticated()) {
-    res.json({ user: req.user });
+    // Get authorized users from env var
+    const authorizedUsers = (process.env.AUTHORIZED_USERS || '').split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
+    const githubLogin = req.user && req.user.username ? req.user.username.toLowerCase() : (req.user && req.user.login ? req.user.login.toLowerCase() : null);
+    if (githubLogin && authorizedUsers.includes(githubLogin)) {
+      res.json({ user: req.user });
+    } else {
+      res.status(401).json({ user: null, error: 'Not authorized' });
+    }
   } else {
     res.status(401).json({ user: null });
   }

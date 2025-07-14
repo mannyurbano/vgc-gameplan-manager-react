@@ -67,7 +67,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => (
       <div className="auth-logo">🎮</div>
       <h1>VGC Team Manager</h1>
       <p className="auth-subtitle">Professional Pokémon VGC team planning and strategy tool</p>
-      
       <div className="auth-features">
         <div className="feature">
           <span className="feature-icon">📋</span>
@@ -86,17 +85,53 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => (
           <span>Secure GitHub-based authentication</span>
         </div>
       </div>
-
-      <div className="auth-actions">
-        <button onClick={onLogin} className="btn btn-primary btn-large">
-          <span className="btn-icon">🔐</span>
+      <div className="auth-actions" style={{ display: 'flex', flexDirection: 'row', gap: '2rem', marginTop: '2rem', justifyContent: 'center' }}>
+        <button
+          onClick={onLogin}
+          className="btn-login github-signin-btn"
+          style={{
+            background: 'linear-gradient(135deg, #24292f 0%, #4ade80 100%)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '16px',
+            boxShadow: '0 4px 24px rgba(74, 222, 128, 0.15)',
+            fontWeight: 700,
+            fontSize: '1.15rem',
+            padding: '1.2rem 2.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            minWidth: '220px',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '0.5rem' }}>
+            <circle cx="12" cy="12" r="12" fill="#fff"/>
+            <path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.48 2.87 8.28 6.84 9.63.5.09.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.62-3.37-1.36-3.37-1.36-.45-1.18-1.1-1.5-1.1-1.5-.9-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.84c.85.004 1.7.12 2.5.35 1.9-1.33 2.74-1.05 2.74-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.8 0 .27.18.58.69.48A10.01 10.01 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z" fill="#24292f"/>
+          </svg>
           Sign in with GitHub
         </button>
-        <p className="auth-notice">
-          Access is currently limited to authorized beta users
-        </p>
+        <div className="auth-notice" style={{
+          background: 'rgba(74, 222, 128, 0.08)',
+          border: '1.5px solid rgba(74, 222, 128, 0.25)',
+          borderRadius: '14px',
+          padding: '1.5rem 2rem',
+          color: '#4ade80',
+          fontWeight: 600,
+          fontSize: '1.05rem',
+          minWidth: '260px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path fill="#4ade80" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></svg>
+            Access is currently limited to authorized beta users
+          </span>
+        </div>
       </div>
-
       <div className="auth-footer">
         <p>Built for competitive VGC players</p>
         {process.env.NODE_ENV === 'development' && (

@@ -25,7 +25,8 @@ interface GitHubUser {
 const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP'; // Your GitHub OAuth Client ID
 
 // Option 1: Static list of authorized users (simple approach)
-const AUTHORIZED_USERS = ['mannyurbano']; // Replace with your actual GitHub username
+//const AUTHORIZED_USERS = ['mannyurbano']; // Replace with your actual GitHub username
+const AUTHORIZED_USERS = ['']; // Replace with your actual GitHub username
 
 // Option 2: Dynamic list from GitHub Gist (more flexible)
 const AUTHORIZED_USERS_GIST_ID = ''; // Add your Gist ID here if using dynamic list

@@ -85,7 +85,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => (
           <span>Secure GitHub-based authentication</span>
         </div>
       </div>
-      <div className="auth-actions" style={{ display: 'flex', flexDirection: 'row', gap: '2rem', marginTop: '2rem', justifyContent: 'center' }}>
+      <div className="auth-actions" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '2.5rem' }}>
         <button
           onClick={onLogin}
           className="btn-login github-signin-btn"
@@ -113,24 +113,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => (
           </svg>
           Sign in with GitHub
         </button>
-        <div className="auth-notice" style={{
-          background: 'rgba(74, 222, 128, 0.08)',
-          border: '1.5px solid rgba(74, 222, 128, 0.25)',
-          borderRadius: '14px',
-          padding: '1.5rem 2rem',
+        <span style={{
+          marginTop: '1.2rem',
           color: '#4ade80',
-          fontWeight: 600,
-          fontSize: '1.05rem',
-          minWidth: '260px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          fontStyle: 'italic',
+          fontSize: '0.98rem',
+          opacity: 0.85,
+          textAlign: 'center',
+          maxWidth: '320px',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path fill="#4ade80" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></svg>
-            Access is currently limited to authorized beta users
-          </span>
-        </div>
+          Access is currently limited to authorized beta users
+        </span>
       </div>
       <div className="auth-footer">
         <p>Built for competitive VGC players</p>

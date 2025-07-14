@@ -240,16 +240,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [initializeAuth]);
 
   const login = () => {
-    const state = Math.random().toString(36).substring(7);
-    localStorage.setItem('oauth_state', state);
-    
-    const authUrl = `https://github.com/login/oauth/authorize?` +
-      `client_id=${GITHUB_CLIENT_ID}&` +
-      `redirect_uri=${encodeURIComponent(GITHUB_REDIRECT_URI)}&` +
-      `scope=user:email&` +
-      `state=${state}`;
-    
-    window.location.href = authUrl;
+    // Redirect to backend for OAuth
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'https://your-app.up.railway.app';
+    window.location.href = `${backendUrl}/auth/github`;
   };
 
   const logout = () => {

@@ -146,16 +146,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Check URL search params for authorization code flow
       const urlSearchParams = new URLSearchParams(window.location.search);
       const authCode = urlSearchParams.get('code');
-      const state = urlSearchParams.get('state');
+      const receivedState = urlSearchParams.get('state');
       const error = urlSearchParams.get('error');
       
       // Check URL hash for implicit flow
       const urlHashParams = new URLSearchParams(window.location.hash.substring(1));
       const accessToken = urlHashParams.get('access_token');
       const hashError = urlHashParams.get('error');
+      const hashState = urlHashParams.get('state');
       
       if (error || hashError) {
         setError(`OAuth error: ${error || hashError}`);
+        setLoading(false);
+        return;
+      }
+      
+      // Validate state parameter for CSRF protection
+      const storedState = localStorage.getItem('github_oauth_state');
+      const stateToValidate = receivedState || hashState;
+      
+      if ((authCode || accessToken) && stateToValidate && stateToValidate !== storedState) {
+        setError('Invalid state parameter - possible CSRF attack');
         setLoading(false);
         return;
       }

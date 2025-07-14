@@ -98,26 +98,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchAuthorizedUsers]);
 
-  const handleOAuthCallback = useCallback(async (code: string, state: string) => {
-    try {
-      // Check if user is authenticated via server session
-      const userData = await checkServerAuth();
-      
-      if (userData) {
-        setUser(userData);
-        setIsAuthenticated(true);
 
-        // Check authorization
-        const authorized = await checkAuthorization(userData.login);
-        setIsAuthorized(authorized);
-      } else {
-        setError('Authentication failed');
-      }
-    } catch (error) {
-      console.error('OAuth callback error:', error);
-      setError('Authentication failed');
-    }
-  }, [checkServerAuth, checkAuthorization]);
 
   const initializeAuth = useCallback(async () => {
     setLoading(true);

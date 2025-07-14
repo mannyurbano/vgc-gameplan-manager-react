@@ -1,0 +1,11 @@
+{
+  "name": "vgc-oauth-proxy",
+  "version": "1.0.0",
+  "description": "OAuth proxy for VGC Team Manager",
+  "main": "api/github-oauth.js",
+  "scripts": {
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+} 

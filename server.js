@@ -9,7 +9,10 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({
+  origin: ['https://mannyurbano.github.io', 'http://localhost:3000'],
+  credentials: true
+}));
 app.use(express.json());
 
 // --- GitHub OAuth session and passport setup ---
@@ -67,6 +70,55 @@ app.get('/auth/user', (req, res) => {
     res.json({ user: req.user });
   } else {
     res.status(401).json({ user: null });
+  }
+});
+
+// --- PKCE OAuth Proxy Endpoint ---
+app.post('/oauth/github/token', async (req, res) => {
+  try {
+    const { client_id, code, code_verifier } = req.body;
+
+    // Validate required parameters
+    if (!client_id || !code || !code_verifier) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    console.log('🔄 Exchanging authorization code for access token via PKCE...');
+
+    // Exchange authorization code for access token with GitHub
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id,
+        code,
+        code_verifier,
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (tokenData.access_token) {
+      console.log('✅ Access token obtained successfully');
+      // Return only the access token (don't expose other sensitive data)
+      res.json({
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        scope: tokenData.scope,
+      });
+    } else {
+      console.error('❌ Token exchange failed:', tokenData);
+      res.status(400).json({
+        error: tokenData.error || 'Token exchange failed',
+        error_description: tokenData.error_description,
+      });
+    }
+  } catch (error) {
+    console.error('OAuth proxy error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

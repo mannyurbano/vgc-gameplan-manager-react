@@ -171,14 +171,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error('Missing code verifier');
           }
           
-          // Exchange authorization code for access token using PKCE
-          const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+          // Exchange authorization code for access token using Railway OAuth proxy
+          const proxyUrl = 'https://vgc-gameplan-manager-react-production.up.railway.app/oauth/github/token';
+          const tokenResponse = await fetch(proxyUrl, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',
-              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Type': 'application/json',
             },
-            body: new URLSearchParams({
+            body: JSON.stringify({
               client_id: GITHUB_CLIENT_ID,
               code: authCode,
               code_verifier: codeVerifier,

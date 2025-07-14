@@ -498,12 +498,9 @@ const extractTeamPokemonWithItems = (content: string): Array<{pokemon: string, i
               pokemonName.replace('-Incarnate', ''),
               pokemonName.replace('-Therian', ''),
             ];
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            let foundMatch = false;
             for (const altName of alternateNames) {
               if (POKEMON_ID_MAP[altName]) {
                 finalPokemonName = altName;
-                foundMatch = true;
                 break;
               }
             }
@@ -755,6 +752,7 @@ const extractPokemonFromContent = (gameplan: Gameplan): string[] => {
 };
 
 // Extract Pokemon details from gameplan content
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const extractPokemonDetails = (content: string, pokemonName: string): {
   nickname?: string;
   item?: string;

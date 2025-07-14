@@ -58,8 +58,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-
-
   const checkServerAuth = useCallback(async () => {
     try {
       const response = await fetch('/auth/user', {
@@ -97,8 +95,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
   }, [fetchAuthorizedUsers]);
-
-
 
   const initializeAuth = useCallback(async () => {
     setLoading(true);

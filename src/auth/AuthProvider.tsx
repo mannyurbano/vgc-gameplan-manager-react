@@ -158,7 +158,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [fetchUserProfile, checkAuthorization]);
+  }, [checkAuthorization]);
 
   useEffect(() => {
     initializeAuth();
@@ -201,11 +201,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       window.open(verificationUri, '_blank');
       
       // Show user code to user
-      const copyCode = () => {
-        navigator.clipboard.writeText(userCode);
-        alert('Code copied to clipboard!');
-      };
-      
       const userConfirmed = window.confirm(
         `Please go to ${verificationUri} and enter this code:\n\n${userCode}\n\nClick OK after you've authorized the app.\n\n(The verification page has been opened in a new tab)`
       );

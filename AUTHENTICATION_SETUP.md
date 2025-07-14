@@ -66,7 +66,7 @@ REACT_APP_AUTHORIZED_USERS_GIST_ID=your_gist_id_here
 Edit `src/auth/AuthProvider.tsx`:
 ```typescript
 const AUTHORIZED_USERS = [
-  'your-github-username',    // Replace with your username
+  'mannyurbano',    // Replace with your username
   'beta-user-1',             // Add beta users here
   'beta-user-2',
   // Add more users as needed

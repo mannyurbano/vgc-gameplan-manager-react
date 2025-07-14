@@ -23,8 +23,8 @@ interface GitHubUser {
 // Configuration - add these to your .env file
 const GITHUB_CLIENT_ID = process.env.REACT_APP_GITHUB_CLIENT_ID || 'your_github_client_id';
 const GITHUB_CLIENT_SECRET = process.env.REACT_APP_GITHUB_CLIENT_SECRET || 'your_github_client_secret';
-const GITHUB_REDIRECT_URI = process.env.REACT_APP_GITHUB_REDIRECT_URI || 
-  `${window.location.origin}/auth/callback`;
+// const GITHUB_REDIRECT_URI = process.env.REACT_APP_GITHUB_REDIRECT_URI || 
+//   `${window.location.origin}/auth/callback`;
 
 // Option 1: Static list of authorized users (simple approach)
 const AUTHORIZED_USERS = ['your-github-username']; // Replace with your GitHub username

@@ -20,12 +20,15 @@ interface GitHubUser {
   email: string;
 }
 
-// Configuration - using server-side OAuth flow
+// Configuration - Client-side OAuth flow
+// Replace this with your actual GitHub OAuth Client ID
+const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP'; // Your GitHub OAuth Client ID
+
 // Option 1: Static list of authorized users (simple approach)
 const AUTHORIZED_USERS = ['your-github-username']; // Replace with your GitHub username
 
 // Option 2: Dynamic list from GitHub Gist (more flexible)
-const AUTHORIZED_USERS_GIST_ID = process.env.REACT_APP_AUTHORIZED_USERS_GIST_ID || '';
+const AUTHORIZED_USERS_GIST_ID = ''; // Add your Gist ID here if using dynamic list
 
 // Development bypass - set to true for localhost development
 const BYPASS_AUTH_IN_DEV = process.env.NODE_ENV === 'development';
@@ -37,7 +40,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper functions - declared first to avoid dependency issues
+  // Helper functions
   const fetchAuthorizedUsers = useCallback(async (): Promise<string[]> => {
     if (!AUTHORIZED_USERS_GIST_ID) return [];
 
@@ -55,24 +58,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return [];
     } catch {
       return [];
-    }
-  }, []);
-
-  const checkServerAuth = useCallback(async () => {
-    try {
-      const response = await fetch('/auth/user', {
-        credentials: 'include',
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        return data.user;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Server auth check failed:', error);
-      return null;
     }
   }, []);
 
@@ -96,6 +81,73 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchAuthorizedUsers]);
 
+  const exchangeCodeForToken = useCallback(async (code: string): Promise<{token: string, user: GitHubUser} | null> => {
+    try {
+      // Use the OAuth proxy to exchange code for token
+      const proxyUrl = 'https://your-oauth-proxy.vercel.app/api/github-oauth'; // Replace with your actual proxy URL
+      
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Token exchange failed');
+      }
+
+      const data = await response.json();
+      return {
+        token: data.access_token,
+        user: data.user
+      };
+    } catch (error) {
+      console.error('Token exchange failed:', error);
+      return null;
+    }
+  }, []);
+
+  const fetchUserProfile = useCallback(async (token: string): Promise<GitHubUser | null> => {
+    try {
+      const response = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user profile');
+      }
+
+      const userData = await response.json();
+
+      // Get user email
+      const emailResponse = await fetch('https://api.github.com/user/emails', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      const emails = await emailResponse.json();
+      const primaryEmail = emails.find((email: any) => email.primary)?.email || '';
+
+      return {
+        id: userData.id,
+        login: userData.login,
+        name: userData.name,
+        avatar_url: userData.avatar_url,
+        email: primaryEmail,
+      };
+    } catch (error) {
+      console.error('Failed to fetch user profile:', error);
+      return null;
+    }
+  }, []);
+
   const initializeAuth = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -117,14 +169,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check for existing server-side authentication
-      const userData = await checkServerAuth();
+      // Check for OAuth callback
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
       
-      if (userData) {
-        setUser(userData);
-        setIsAuthenticated(true);
-        const authorized = await checkAuthorization(userData.login);
-        setIsAuthorized(authorized);
+      if (code) {
+        // Clear the URL parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // Exchange code for token
+        const tokenData = await exchangeCodeForToken(code);
+        if (tokenData) {
+          const { token, user: exchangedUser } = tokenData;
+          
+          // Use the user data from the exchange or fetch fresh data
+          const userData = exchangedUser || await fetchUserProfile(token);
+          if (userData) {
+            setUser(userData);
+            setIsAuthenticated(true);
+            const authorized = await checkAuthorization(userData.login);
+            setIsAuthorized(authorized);
+            
+            // Store auth state
+            localStorage.setItem('github_auth_token', token);
+            localStorage.setItem('github_user', JSON.stringify(userData));
+          }
+        }
+      } else {
+        // Check for existing auth
+        const storedToken = localStorage.getItem('github_auth_token');
+        const storedUser = localStorage.getItem('github_user');
+        
+        if (storedToken && storedUser) {
+          const userData = JSON.parse(storedUser);
+          setUser(userData);
+          setIsAuthenticated(true);
+          const authorized = await checkAuthorization(userData.login);
+          setIsAuthorized(authorized);
+        }
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -132,27 +214,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [checkServerAuth, checkAuthorization]);
+  }, [exchangeCodeForToken, fetchUserProfile, checkAuthorization]);
 
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
 
   const login = () => {
-    // Redirect to backend for OAuth
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'https://vgc-gameplan-manager-react-production.up.railway.app';
-    window.location.href = `${backendUrl}/auth/github`;
+    // Generate state parameter for CSRF protection
+    const state = Math.random().toString(36).substring(7);
+    localStorage.setItem('github_oauth_state', state);
+    
+    // Build OAuth URL
+    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+    const scope = encodeURIComponent('user:email');
+    const clientId = encodeURIComponent(GITHUB_CLIENT_ID);
+    
+    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+    
+    // Redirect to GitHub OAuth
+    window.location.href = oauthUrl;
   };
 
   const logout = () => {
-    // Call server-side logout
-    fetch('/auth/logout', {
-      credentials: 'include',
-    }).finally(() => {
-      setIsAuthenticated(false);
-      setIsAuthorized(false);
-      setUser(null);
-    });
+    // Clear stored auth data
+    localStorage.removeItem('github_auth_token');
+    localStorage.removeItem('github_user');
+    localStorage.removeItem('github_oauth_state');
+    
+    setIsAuthenticated(false);
+    setIsAuthorized(false);
+    setUser(null);
   };
 
   const value: AuthContextType = {

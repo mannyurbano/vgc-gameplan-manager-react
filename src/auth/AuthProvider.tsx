@@ -165,12 +165,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [initializeAuth]);
 
   const login = async () => {
+    console.log('🚀 Login button clicked - starting Device Flow...');
     setLoading(true);
     setError(null);
     
     try {
       // Use GitHub Device Flow for client-side authentication
       console.log('🔄 Starting GitHub Device Flow...');
+      alert('Device Flow starting... Check console for logs.');
       
       // Step 1: Request device and user codes
       const deviceResponse = await fetch('https://github.com/login/device/code', {

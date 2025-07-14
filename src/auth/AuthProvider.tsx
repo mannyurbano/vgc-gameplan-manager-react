@@ -241,7 +241,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = () => {
     // Redirect to backend for OAuth
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'https://your-app.up.railway.app';
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'https://vgc-gameplan-manager-react-production.up.railway.app';
     window.location.href = `${backendUrl}/auth/github`;
   };
 

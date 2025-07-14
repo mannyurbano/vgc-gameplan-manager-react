@@ -25,7 +25,7 @@ interface GitHubUser {
 const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP'; // Your GitHub OAuth Client ID
 
 // Option 1: Static list of authorized users (simple approach)
-const AUTHORIZED_USERS = ['your-github-username']; // Replace with your GitHub username
+const AUTHORIZED_USERS = ['mannyurbano']; // Replace with your actual GitHub username
 
 // Option 2: Dynamic list from GitHub Gist (more flexible)
 const AUTHORIZED_USERS_GIST_ID = ''; // Add your Gist ID here if using dynamic list
@@ -198,13 +198,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const state = Math.random().toString(36).substring(7);
     localStorage.setItem('github_oauth_state', state);
     
-    // Build OAuth URL for implicit flow
+    // Build OAuth URL for implicit flow - DO NOT encode the client_id as it's already clean
     const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
     const scope = encodeURIComponent('user:email');
-    const clientId = encodeURIComponent(GITHUB_CLIENT_ID);
     
     // Use implicit flow (response_type=token) for client-side OAuth
-    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=token`;
+    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=token`;
+    
+    console.log('OAuth URL:', oauthUrl); // Debug log
     
     // Redirect to GitHub OAuth
     window.location.href = oauthUrl;

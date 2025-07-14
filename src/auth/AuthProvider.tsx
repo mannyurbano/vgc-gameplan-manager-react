@@ -81,34 +81,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchAuthorizedUsers]);
 
-  const exchangeCodeForToken = useCallback(async (code: string): Promise<{token: string, user: GitHubUser} | null> => {
-    try {
-      // Use the OAuth proxy to exchange code for token
-      const proxyUrl = 'https://your-oauth-proxy.vercel.app/api/github-oauth'; // Replace with your actual proxy URL
-      
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ code }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Token exchange failed');
-      }
-
-      const data = await response.json();
-      return {
-        token: data.access_token,
-        user: data.user
-      };
-    } catch (error) {
-      console.error('Token exchange failed:', error);
-      return null;
-    }
-  }, []);
-
   const fetchUserProfile = useCallback(async (token: string): Promise<GitHubUser | null> => {
     try {
       const response = await fetch('https://api.github.com/user', {
@@ -169,31 +141,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check for OAuth callback
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
+      // Check for OAuth callback (implicit flow)
+      const urlParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = urlParams.get('access_token');
+      const error = urlParams.get('error');
       
-      if (code) {
-        // Clear the URL parameters
+      if (error) {
+        setError(`OAuth error: ${error}`);
+        setLoading(false);
+        return;
+      }
+      
+      if (accessToken) {
+        // Clear the URL hash
         window.history.replaceState({}, document.title, window.location.pathname);
         
-        // Exchange code for token
-        const tokenData = await exchangeCodeForToken(code);
-        if (tokenData) {
-          const { token, user: exchangedUser } = tokenData;
+        // Fetch user profile
+        const userData = await fetchUserProfile(accessToken);
+        if (userData) {
+          setUser(userData);
+          setIsAuthenticated(true);
+          const authorized = await checkAuthorization(userData.login);
+          setIsAuthorized(authorized);
           
-          // Use the user data from the exchange or fetch fresh data
-          const userData = exchangedUser || await fetchUserProfile(token);
-          if (userData) {
-            setUser(userData);
-            setIsAuthenticated(true);
-            const authorized = await checkAuthorization(userData.login);
-            setIsAuthorized(authorized);
-            
-            // Store auth state
-            localStorage.setItem('github_auth_token', token);
-            localStorage.setItem('github_user', JSON.stringify(userData));
-          }
+          // Store auth state
+          localStorage.setItem('github_auth_token', accessToken);
+          localStorage.setItem('github_user', JSON.stringify(userData));
         }
       } else {
         // Check for existing auth
@@ -214,7 +187,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [exchangeCodeForToken, fetchUserProfile, checkAuthorization]);
+  }, [fetchUserProfile, checkAuthorization]);
 
   useEffect(() => {
     initializeAuth();
@@ -225,12 +198,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const state = Math.random().toString(36).substring(7);
     localStorage.setItem('github_oauth_state', state);
     
-    // Build OAuth URL
+    // Build OAuth URL for implicit flow
     const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
     const scope = encodeURIComponent('user:email');
     const clientId = encodeURIComponent(GITHUB_CLIENT_ID);
     
-    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+    // Use implicit flow (response_type=token) for client-side OAuth
+    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=token`;
     
     // Redirect to GitHub OAuth
     window.location.href = oauthUrl;

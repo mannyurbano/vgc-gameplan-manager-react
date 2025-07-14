@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import { AuthProvider } from './auth/AuthProvider';
 import { AuthGuard } from './auth/AuthGuard';
 import { useAuth } from './auth/AuthProvider';
+import { CloudImportModal } from './CloudImportModal';
 import './App.css';
 
 interface Gameplan {
@@ -2123,6 +2124,7 @@ function App() {
   }, [gameplans, selectedGameplan]);
   const [viewMode, setViewMode] = useState<'list' | 'detail' | 'edit'>('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCloudImportModalOpen, setIsCloudImportModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -2686,7 +2688,7 @@ function App() {
               <button onClick={exportData} className="btn btn-success btn-sm">
                 📥 Export
               </button>
-              <button onClick={() => document.getElementById('import-input')?.click()} className="btn btn-info btn-sm">
+              <button onClick={() => setIsCloudImportModalOpen(true)} className="btn btn-info btn-sm">
                 📤 Import
               </button>
             </div>
@@ -2953,16 +2955,21 @@ function App() {
         </div>
       </div>
 
+      {/* Cloud Import Modal */}
+      <CloudImportModal
+        isOpen={isCloudImportModalOpen}
+        onClose={() => setIsCloudImportModalOpen(false)}
+        onImport={processImportFile}
+      />
+
       {/* Hidden Import Input */}
       <input
         type="file"
         id="import-input"
         accept=".json"
-                 onChange={handleImportFile}
+        onChange={handleImportFile}
         style={{ display: 'none' }}
       />
-
-
 
       {/* Reset Modal */}
       {isModalOpen && (

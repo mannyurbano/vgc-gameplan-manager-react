@@ -24,7 +24,9 @@
     "web-vitals": "^2.1.4",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
-    "express-session": "^1.17.3"
+    "express-session": "^1.17.3",
+    "googleapis": "^128.0.0",
+    "google-auth-library": "^9.0.0"
   },
   "devDependencies": {
     "concurrently": "^7.6.0",

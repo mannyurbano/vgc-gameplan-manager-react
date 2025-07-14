@@ -23,7 +23,6 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [gdriveFiles, setGdriveFiles] = useState<CloudFile[]>([]);
-  const [icloudFiles, setIcloudFiles] = useState<CloudFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,6 +84,38 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   }, [handleFileSelect]);
 
   // Google Drive integration
+  const handleGoogleDriveAuthInternal = useCallback(async () => {
+    try {
+      const googleAPI = (window as any).GoogleDriveAPI;
+      const apiKey = process.env.REACT_APP_GOOGLE_API_KEY;
+      const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+
+      if (!apiKey || !clientId) {
+        throw new Error('Google API credentials not configured. Please contact the administrator.');
+      }
+
+      const gapi = await googleAPI.init(apiKey, clientId);
+      const authInstance = gapi.auth2.getAuthInstance();
+      
+      if (!authInstance.isSignedIn.get()) {
+        await authInstance.signIn();
+      }
+
+      // Fetch files from Google Drive
+      const response = await gapi.client.drive.files.list({
+        pageSize: 20,
+        fields: 'files(id, name, mimeType, size, modifiedTime)',
+        q: "mimeType='application/json' and trashed=false"
+      });
+
+      setGdriveFiles(response.result.files || []);
+    } catch (err) {
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const handleGoogleDriveAuth = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -117,39 +148,7 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
       setError(`Google Drive error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setIsLoading(false);
     }
-  }, []);
-
-  const handleGoogleDriveAuthInternal = useCallback(async () => {
-    try {
-      const googleAPI = (window as any).GoogleDriveAPI;
-      const apiKey = process.env.REACT_APP_GOOGLE_API_KEY;
-      const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-
-      if (!apiKey || !clientId) {
-        throw new Error('Google API credentials not configured. Please contact the administrator.');
-      }
-
-      const gapi = await googleAPI.init(apiKey, clientId);
-      const authInstance = gapi.auth2.getAuthInstance();
-      
-      if (!authInstance.isSignedIn.get()) {
-        await authInstance.signIn();
-      }
-
-      // Fetch files from Google Drive
-      const response = await gapi.client.drive.files.list({
-        pageSize: 20,
-        fields: 'files(id, name, mimeType, size, modifiedTime)',
-        q: "mimeType='application/json' and trashed=false"
-      });
-
-      setGdriveFiles(response.result.files || []);
-    } catch (err) {
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  }, [handleGoogleDriveAuthInternal]);
 
   const handleGoogleDriveImport = useCallback(async (file: CloudFile) => {
     setIsLoading(true);

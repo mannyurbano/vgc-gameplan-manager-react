@@ -141,18 +141,69 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check for OAuth callback (implicit flow)
-      const urlParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = urlParams.get('access_token');
-      const error = urlParams.get('error');
+      // Check for OAuth callback (both implicit and authorization code flows)
       
-      if (error) {
-        setError(`OAuth error: ${error}`);
+      // Check URL search params for authorization code flow
+      const urlSearchParams = new URLSearchParams(window.location.search);
+      const authCode = urlSearchParams.get('code');
+      const state = urlSearchParams.get('state');
+      const error = urlSearchParams.get('error');
+      
+      // Check URL hash for implicit flow
+      const urlHashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = urlHashParams.get('access_token');
+      const hashError = urlHashParams.get('error');
+      
+      if (error || hashError) {
+        setError(`OAuth error: ${error || hashError}`);
         setLoading(false);
         return;
       }
       
-      if (accessToken) {
+      if (authCode) {
+        console.log('🔄 Authorization code received, exchanging for access token...');
+        // Clear the URL search params
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        try {
+          // Exchange authorization code for access token using GitHub's client-side flow
+          const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              client_id: GITHUB_CLIENT_ID,
+              code: authCode,
+              // Note: For public clients, GitHub allows token exchange without client_secret
+            }),
+          });
+          
+          const tokenData = await tokenResponse.json();
+          
+          if (tokenData.access_token) {
+            // Fetch user profile with the access token
+            const userData = await fetchUserProfile(tokenData.access_token);
+            if (userData) {
+              setUser(userData);
+              setIsAuthenticated(true);
+              const authorized = await checkAuthorization(userData.login);
+              setIsAuthorized(authorized);
+              
+              // Store auth state
+              localStorage.setItem('github_auth_token', tokenData.access_token);
+              localStorage.setItem('github_user', JSON.stringify(userData));
+            }
+          } else {
+            setError('Failed to exchange authorization code for access token');
+          }
+        } catch (error) {
+          console.error('Token exchange error:', error);
+          setError('Failed to complete authentication');
+        }
+      } else if (accessToken) {
+        console.log('🔄 Access token received from implicit flow...');
         // Clear the URL hash
         window.history.replaceState({}, document.title, window.location.pathname);
         

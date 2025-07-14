@@ -141,70 +141,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check for OAuth callback (both implicit and authorization code flows)
+      // Device Flow doesn't use callback URLs, so just check for existing auth
+      const storedToken = localStorage.getItem('github_auth_token');
+      const storedUser = localStorage.getItem('github_user');
       
-      // Check URL search params for authorization code flow
-      const urlSearchParams = new URLSearchParams(window.location.search);
-      const authCode = urlSearchParams.get('code');
-      const receivedState = urlSearchParams.get('state');
-      const error = urlSearchParams.get('error');
-      
-      // Check URL hash for implicit flow
-      const urlHashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = urlHashParams.get('access_token');
-      const hashError = urlHashParams.get('error');
-      const hashState = urlHashParams.get('state');
-      
-      if (error || hashError) {
-        setError(`OAuth error: ${error || hashError}`);
-        setLoading(false);
-        return;
-      }
-      
-      // Validate state parameter for CSRF protection
-      const storedState = localStorage.getItem('github_oauth_state');
-      const stateToValidate = receivedState || hashState;
-      
-      if ((authCode || accessToken) && stateToValidate && stateToValidate !== storedState) {
-        setError('Invalid state parameter - possible CSRF attack');
-        setLoading(false);
-        return;
-      }
-      
-      if (authCode) {
-        console.log('🔄 Authorization code received, but client-side apps cannot exchange codes securely');
-        // Clear the URL search params
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setError('OAuth configuration issue: Received authorization code instead of access token. Please update your GitHub OAuth app to support implicit flow or use a server-side proxy.');
-      } else if (accessToken) {
-        console.log('🔄 Access token received from implicit flow...');
-        // Clear the URL hash
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
-        // Fetch user profile
-        const userData = await fetchUserProfile(accessToken);
-        if (userData) {
-          setUser(userData);
-          setIsAuthenticated(true);
-          const authorized = await checkAuthorization(userData.login);
-          setIsAuthorized(authorized);
-          
-          // Store auth state
-          localStorage.setItem('github_auth_token', accessToken);
-          localStorage.setItem('github_user', JSON.stringify(userData));
-        }
-      } else {
-        // Check for existing auth
-        const storedToken = localStorage.getItem('github_auth_token');
-        const storedUser = localStorage.getItem('github_user');
-        
-        if (storedToken && storedUser) {
-          const userData = JSON.parse(storedUser);
-          setUser(userData);
-          setIsAuthenticated(true);
-          const authorized = await checkAuthorization(userData.login);
-          setIsAuthorized(authorized);
-        }
+      if (storedToken && storedUser) {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+        setIsAuthenticated(true);
+        const authorized = await checkAuthorization(userData.login);
+        setIsAuthorized(authorized);
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -218,31 +164,136 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initializeAuth();
   }, [initializeAuth]);
 
-  const login = () => {
-    // Generate state parameter for CSRF protection
-    const state = Math.random().toString(36).substring(7);
-    localStorage.setItem('github_oauth_state', state);
+  const login = async () => {
+    setLoading(true);
+    setError(null);
     
-    // Build OAuth URL for implicit flow - DO NOT encode the client_id as it's already clean
-    // Handle both GitHub Pages and Railway deployments
-    let baseUrl;
-    if (window.location.hostname === 'mannyurbano.github.io') {
-      // GitHub Pages: use full path without trailing slash
-      baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-    } else {
-      // Railway or other deployments: use just origin
-      baseUrl = window.location.origin;
+    try {
+      // Use GitHub Device Flow for client-side authentication
+      console.log('🔄 Starting GitHub Device Flow...');
+      
+      // Step 1: Request device and user codes
+      const deviceResponse = await fetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: GITHUB_CLIENT_ID,
+          scope: 'user:email',
+        }),
+      });
+      
+      if (!deviceResponse.ok) {
+        throw new Error('Failed to initiate device flow');
+      }
+      
+      const deviceData = await deviceResponse.json();
+      
+      // Step 2: Show user the verification URL and code
+      const userCode = deviceData.user_code;
+      const verificationUri = deviceData.verification_uri;
+      const deviceCode = deviceData.device_code;
+      const interval = deviceData.interval || 5;
+      
+      // Open GitHub device verification in new tab
+      window.open(verificationUri, '_blank');
+      
+      // Show user code to user
+      const copyCode = () => {
+        navigator.clipboard.writeText(userCode);
+        alert('Code copied to clipboard!');
+      };
+      
+      const userConfirmed = window.confirm(
+        `Please go to ${verificationUri} and enter this code:\n\n${userCode}\n\nClick OK after you've authorized the app.\n\n(The verification page has been opened in a new tab)`
+      );
+      
+      if (!userConfirmed) {
+        setLoading(false);
+        return;
+      }
+      
+      // Step 3: Poll for access token
+      console.log('🔄 Polling for access token...');
+      
+      const pollForToken = async () => {
+        const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            client_id: GITHUB_CLIENT_ID,
+            device_code: deviceCode,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          }),
+        });
+        
+        const tokenData = await tokenResponse.json();
+        
+        if (tokenData.access_token) {
+          // Success! We have an access token
+          console.log('✅ Access token received!');
+          
+          // Fetch user profile
+          const userData = await fetchUserProfile(tokenData.access_token);
+          if (userData) {
+            setUser(userData);
+            setIsAuthenticated(true);
+            const authorized = await checkAuthorization(userData.login);
+            setIsAuthorized(authorized);
+            
+            // Store auth state
+            localStorage.setItem('github_auth_token', tokenData.access_token);
+            localStorage.setItem('github_user', JSON.stringify(userData));
+          }
+          
+          setLoading(false);
+          return true;
+        } else if (tokenData.error === 'authorization_pending') {
+          // Still waiting for user authorization
+          return false;
+        } else if (tokenData.error === 'slow_down') {
+          // Rate limited, wait longer
+          return false;
+        } else {
+          // Other error
+          throw new Error(`Device flow error: ${tokenData.error}`);
+        }
+      };
+      
+      // Poll every few seconds
+      const maxAttempts = 20; // 20 attempts = ~2 minutes
+      let attempts = 0;
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        
+        try {
+          const success = await pollForToken();
+          if (success) {
+            clearInterval(pollInterval);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setError('Device authorization timed out. Please try again.');
+            setLoading(false);
+          }
+        } catch (error) {
+          clearInterval(pollInterval);
+          console.error('Token polling error:', error);
+          setError('Failed to complete device authorization');
+          setLoading(false);
+        }
+      }, interval * 1000);
+      
+    } catch (error) {
+      console.error('Device flow error:', error);
+      setError('Failed to start device authorization flow');
+      setLoading(false);
     }
-    const redirectUri = encodeURIComponent(baseUrl);
-    const scope = encodeURIComponent('user:email');
-    
-    // Use implicit flow (response_type=token) for client-side OAuth
-    const oauthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=token`;
-    
-    console.log('OAuth URL:', oauthUrl); // Debug log
-    
-    // Redirect to GitHub OAuth
-    window.location.href = oauthUrl;
   };
 
   const logout = () => {

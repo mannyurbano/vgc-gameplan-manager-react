@@ -172,47 +172,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       if (authCode) {
-        console.log('🔄 Authorization code received, exchanging for access token...');
+        console.log('🔄 Authorization code received, but client-side apps cannot exchange codes securely');
         // Clear the URL search params
         window.history.replaceState({}, document.title, window.location.pathname);
-        
-        try {
-          // Exchange authorization code for access token using GitHub's client-side flow
-          const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              client_id: GITHUB_CLIENT_ID,
-              code: authCode,
-              // Note: For public clients, GitHub allows token exchange without client_secret
-            }),
-          });
-          
-          const tokenData = await tokenResponse.json();
-          
-          if (tokenData.access_token) {
-            // Fetch user profile with the access token
-            const userData = await fetchUserProfile(tokenData.access_token);
-            if (userData) {
-              setUser(userData);
-              setIsAuthenticated(true);
-              const authorized = await checkAuthorization(userData.login);
-              setIsAuthorized(authorized);
-              
-              // Store auth state
-              localStorage.setItem('github_auth_token', tokenData.access_token);
-              localStorage.setItem('github_user', JSON.stringify(userData));
-            }
-          } else {
-            setError('Failed to exchange authorization code for access token');
-          }
-        } catch (error) {
-          console.error('Token exchange error:', error);
-          setError('Failed to complete authentication');
-        }
+        setError('OAuth configuration issue: Received authorization code instead of access token. Please update your GitHub OAuth app to support implicit flow or use a server-side proxy.');
       } else if (accessToken) {
         console.log('🔄 Access token received from implicit flow...');
         // Clear the URL hash

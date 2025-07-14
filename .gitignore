@@ -21,3 +21,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# gameplan files
+/gameplans/
+*.gameplan
+gameplan-*.json
+exported-gameplans.json

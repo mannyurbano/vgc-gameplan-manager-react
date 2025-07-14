@@ -2,6 +2,8 @@
   "name": "vgc-gameplan-manager-react",
   "version": "0.1.0",
   "private": true,
+  "main": "public/electron.js",
+  "homepage": "https://your-username.github.io/vgc-gameplan-manager-react",
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
@@ -11,18 +13,45 @@
     "@types/node": "^16.18.126",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-scripts": "5.0.1",
     "typescript": "^4.9.5",
     "web-vitals": "^2.1.4"
   },
+  "devDependencies": {
+    "concurrently": "^7.6.0",
+    "gh-pages": "^6.1.1",
+    "javascript-obfuscator": "^4.1.0",
+    "webpack-obfuscator": "^3.5.1",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "electron-is-dev": "^2.0.0"
+  },
   "scripts": {
-    "start": "react-scripts start",
-    "start-network": "set HOST=0.0.0.0 && react-scripts start",
+    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "start-frontend-only": "react-scripts start",
+    "start-local": "concurrently \"npm run server\" \"npm run client\"",
+    "start-network": "concurrently \"npm run server\" \"HOST=0.0.0.0 npm run client\"",
+    "client": "react-scripts start",
+    "server": "node server.js",
     "build": "react-scripts build",
+    "build:obfuscated": "npm run build && node scripts/obfuscate.js",
+    "obfuscate": "node scripts/obfuscate.js",
+    "build:electron": "npm run build && electron-builder",
+    "electron": "electron public/electron.js",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "predeploy": "npm run build:obfuscated",
+    "deploy": "gh-pages -d build",
+    "deploy:vercel": "npm run build:obfuscated && vercel --prod",
+    "package:all": "npm run build:obfuscated && npm run build:electron",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint src --ext .js,.jsx,.ts,.tsx --fix"
   },
   "eslintConfig": {
     "extends": [
@@ -41,5 +70,56 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "proxy": "http://localhost:3001",
+  "build": {
+    "appId": "com.vgc.teammanager",
+    "productName": "VGC Team Manager",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "public/electron.js",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "icon": "public/favicon.ico",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "win": {
+      "icon": "public/favicon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "linux": {
+      "icon": "public/favicon.ico",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "dmg": {
+      "title": "VGC Team Manager",
+      "backgroundColor": "#0f0f0f"
+    }
   }
 }

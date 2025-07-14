@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "main": "public/electron.js",
-  "homepage": "https://your-username.github.io/vgc-gameplan-manager-react",
+  "homepage": "https://mannyurbano.github.io/vgc-gameplan-manager-react",
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",

@@ -199,8 +199,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem('github_oauth_state', state);
     
     // Build OAuth URL for implicit flow - DO NOT encode the client_id as it's already clean
-    // Use just origin (no trailing slash) to match GitHub OAuth app configuration
-    const redirectUri = encodeURIComponent(window.location.origin);
+    // Handle both GitHub Pages and Railway deployments
+    let baseUrl;
+    if (window.location.hostname === 'mannyurbano.github.io') {
+      // GitHub Pages: use full path without trailing slash
+      baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+    } else {
+      // Railway or other deployments: use just origin
+      baseUrl = window.location.origin;
+    }
+    const redirectUri = encodeURIComponent(baseUrl);
     const scope = encodeURIComponent('user:email');
     
     // Use implicit flow (response_type=token) for client-side OAuth

@@ -20,12 +20,7 @@ interface GitHubUser {
   email: string;
 }
 
-// Configuration - add these to your .env file
-const GITHUB_CLIENT_ID = process.env.REACT_APP_GITHUB_CLIENT_ID || 'your_github_client_id';
-const GITHUB_CLIENT_SECRET = process.env.REACT_APP_GITHUB_CLIENT_SECRET || 'your_github_client_secret';
-// const GITHUB_REDIRECT_URI = process.env.REACT_APP_GITHUB_REDIRECT_URI || 
-//   `${window.location.origin}/auth/callback`;
-
+// Configuration - using server-side OAuth flow
 // Option 1: Static list of authorized users (simple approach)
 const AUTHORIZED_USERS = ['your-github-username']; // Replace with your GitHub username
 
@@ -63,43 +58,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const validateToken = useCallback(async (token: string): Promise<boolean> => {
-    try {
-      const response = await fetch('https://api.github.com/user', {
-        headers: {
-          'Authorization': `token ${token}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }, []);
 
-  const exchangeCodeForToken = useCallback(async (code: string) => {
-    try {
-      // Using a Vercel function for the OAuth proxy
-      const response = await fetch('/api/github-oauth', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: GITHUB_CLIENT_ID,
-          client_secret: GITHUB_CLIENT_SECRET,
-          code: code,
-        }),
-      });
 
-      if (!response.ok) {
-        throw new Error('Token exchange failed');
+  const checkServerAuth = useCallback(async () => {
+    try {
+      const response = await fetch('/auth/user', {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.user;
       }
-
-      return await response.json();
+      
+      return null;
     } catch (error) {
-      console.error('Token exchange error:', error);
-      throw error;
+      console.error('Server auth check failed:', error);
+      return null;
     }
   }, []);
 
@@ -124,49 +99,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [fetchAuthorizedUsers]);
 
   const handleOAuthCallback = useCallback(async (code: string, state: string) => {
-    const storedState = localStorage.getItem('oauth_state');
-    
-    if (state !== storedState) {
-      throw new Error('Invalid OAuth state');
-    }
-
-    localStorage.removeItem('oauth_state');
-
     try {
-      // Exchange code for token using GitHub's device flow or a proxy service
-      const tokenResponse = await exchangeCodeForToken(code);
-      const accessToken = tokenResponse.access_token;
+      // Check if user is authenticated via server session
+      const userData = await checkServerAuth();
+      
+      if (userData) {
+        setUser(userData);
+        setIsAuthenticated(true);
 
-      // Get user information
-      const userResponse = await fetch('https://api.github.com/user', {
-        headers: {
-          'Authorization': `token ${accessToken}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
-
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user information');
+        // Check authorization
+        const authorized = await checkAuthorization(userData.login);
+        setIsAuthorized(authorized);
+      } else {
+        setError('Authentication failed');
       }
-
-      const userData: GitHubUser = await userResponse.json();
-
-      // Store authentication data
-      localStorage.setItem('github_access_token', accessToken);
-      localStorage.setItem('github_user', JSON.stringify(userData));
-
-      setUser(userData);
-      setIsAuthenticated(true);
-
-      // Check authorization
-      const authorized = await checkAuthorization(userData.login);
-      setIsAuthorized(authorized);
-
     } catch (error) {
       console.error('OAuth callback error:', error);
       setError('Authentication failed');
     }
-  }, [exchangeCodeForToken, checkAuthorization]);
+  }, [checkServerAuth, checkAuthorization]);
 
   const initializeAuth = useCallback(async () => {
     setLoading(true);
@@ -189,43 +140,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Check if we're returning from GitHub OAuth
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
-      const state = urlParams.get('state');
-
-      if (code && state) {
-        // Handle OAuth callback
-        await handleOAuthCallback(code, state);
-        // Clean up URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return;
-      }
-
-      // Check for existing authentication
-      const storedToken = localStorage.getItem('github_access_token');
-      const storedUser = localStorage.getItem('github_user');
-
-      if (storedToken && storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          const isValid = await validateToken(storedToken);
-          
-          if (isValid) {
-            setUser(userData);
-            setIsAuthenticated(true);
-            const authorized = await checkAuthorization(userData.login);
-            setIsAuthorized(authorized);
-          } else {
-            // Token invalid, clear storage
-            localStorage.removeItem('github_access_token');
-            localStorage.removeItem('github_user');
-          }
-        } catch (error) {
-          console.error('Error validating stored auth:', error);
-          localStorage.removeItem('github_access_token');
-          localStorage.removeItem('github_user');
-        }
+      // Check for existing server-side authentication
+      const userData = await checkServerAuth();
+      
+      if (userData) {
+        setUser(userData);
+        setIsAuthenticated(true);
+        const authorized = await checkAuthorization(userData.login);
+        setIsAuthorized(authorized);
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -233,7 +155,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [handleOAuthCallback, checkAuthorization, validateToken]);
+  }, [checkServerAuth, checkAuthorization]);
 
   useEffect(() => {
     initializeAuth();
@@ -246,12 +168,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
-    localStorage.removeItem('github_access_token');
-    localStorage.removeItem('github_user');
-    localStorage.removeItem('oauth_state');
-    setIsAuthenticated(false);
-    setIsAuthorized(false);
-    setUser(null);
+    // Call server-side logout
+    fetch('/auth/logout', {
+      credentials: 'include',
+    }).finally(() => {
+      setIsAuthenticated(false);
+      setIsAuthorized(false);
+      setUser(null);
+    });
   };
 
   const value: AuthContextType = {

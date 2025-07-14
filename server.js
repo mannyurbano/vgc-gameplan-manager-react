@@ -2,12 +2,73 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const session = require('express-session');
+const passport = require('passport');
+const GitHubStrategy = require('passport-github2').Strategy;
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// --- GitHub OAuth session and passport setup ---
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev_secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  }
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.serializeUser((user, done) => {
+  done(null, user);
+});
+passport.deserializeUser((obj, done) => {
+  done(null, obj);
+});
+
+passport.use(new GitHubStrategy({
+    clientID: process.env.GITHUB_CLIENT_ID,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET,
+    callbackURL: process.env.GITHUB_CALLBACK_URL || "http://localhost:3001/auth/github/callback"
+  },
+  function(accessToken, refreshToken, profile, done) {
+    // You can store user info in DB here if needed
+    return done(null, profile);
+  }
+));
+
+// --- GitHub OAuth routes ---
+app.get('/auth/github',
+  passport.authenticate('github', { scope: [ 'user:email' ] })
+);
+
+app.get('/auth/github/callback', 
+  passport.authenticate('github', { failureRedirect: '/' }),
+  function(req, res) {
+    // Redirect to frontend after successful login
+    res.redirect(process.env.FRONTEND_URL || '/');
+  }
+);
+
+app.get('/auth/logout', (req, res) => {
+  req.logout(() => {
+    res.redirect(process.env.FRONTEND_URL || '/');
+  });
+});
+
+app.get('/auth/user', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ user: null });
+  }
+});
 
 // Sample gameplan fallback
 const SAMPLE_GAMEPLAN = {

@@ -141,16 +141,93 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Device Flow doesn't use callback URLs, so just check for existing auth
-      const storedToken = localStorage.getItem('github_auth_token');
-      const storedUser = localStorage.getItem('github_user');
+      // Check for OAuth callback (PKCE authorization code flow)
+      const urlParams = new URLSearchParams(window.location.search);
+      const authCode = urlParams.get('code');
+      const receivedState = urlParams.get('state');
+      const error = urlParams.get('error');
       
-      if (storedToken && storedUser) {
-        const userData = JSON.parse(storedUser);
-        setUser(userData);
-        setIsAuthenticated(true);
-        const authorized = await checkAuthorization(userData.login);
-        setIsAuthorized(authorized);
+      if (error) {
+        setError(`OAuth error: ${error}`);
+        setLoading(false);
+        return;
+      }
+      
+      if (authCode) {
+        console.log('🔄 Authorization code received, exchanging for access token with PKCE...');
+        // Clear the URL search params
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        try {
+          // Validate state parameter
+          const storedState = localStorage.getItem('oauth_state');
+          if (receivedState !== storedState) {
+            throw new Error('Invalid state parameter - possible CSRF attack');
+          }
+          
+          // Get stored code verifier
+          const codeVerifier = localStorage.getItem('oauth_code_verifier');
+          if (!codeVerifier) {
+            throw new Error('Missing code verifier');
+          }
+          
+          // Exchange authorization code for access token using PKCE
+          const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              client_id: GITHUB_CLIENT_ID,
+              code: authCode,
+              code_verifier: codeVerifier,
+            }),
+          });
+          
+          const tokenData = await tokenResponse.json();
+          
+          if (tokenData.access_token) {
+            console.log('✅ Access token received via PKCE!');
+            
+            // Clean up stored PKCE parameters
+            localStorage.removeItem('oauth_code_verifier');
+            localStorage.removeItem('oauth_state');
+            
+            // Fetch user profile with the access token
+            const userData = await fetchUserProfile(tokenData.access_token);
+            if (userData) {
+              setUser(userData);
+              setIsAuthenticated(true);
+              const authorized = await checkAuthorization(userData.login);
+              setIsAuthorized(authorized);
+              
+              // Store auth state
+              localStorage.setItem('github_auth_token', tokenData.access_token);
+              localStorage.setItem('github_user', JSON.stringify(userData));
+            }
+          } else {
+            throw new Error(`Token exchange failed: ${tokenData.error || 'Unknown error'}`);
+          }
+        } catch (error) {
+          console.error('PKCE token exchange error:', error);
+          setError('Failed to complete authentication');
+          // Clean up stored PKCE parameters on error
+          localStorage.removeItem('oauth_code_verifier');
+          localStorage.removeItem('oauth_state');
+        }
+      } else {
+        // Check for existing auth
+        const storedToken = localStorage.getItem('github_auth_token');
+        const storedUser = localStorage.getItem('github_user');
+        
+        if (storedToken && storedUser) {
+          const userData = JSON.parse(storedUser);
+          setUser(userData);
+          setIsAuthenticated(true);
+          const authorized = await checkAuthorization(userData.login);
+          setIsAuthorized(authorized);
+        }
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -158,137 +235,85 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [checkAuthorization]);
+  }, [checkAuthorization, fetchUserProfile]);
 
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
 
+  // PKCE helper functions
+  const generateCodeVerifier = () => {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const chars: string[] = [];
+    for (let i = 0; i < array.length; i++) {
+      chars.push(String.fromCharCode(array[i]));
+    }
+    return btoa(chars.join(''))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+
+  const generateCodeChallenge = async (verifier: string) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = new Uint8Array(digest);
+    const chars: string[] = [];
+    for (let i = 0; i < hashArray.length; i++) {
+      chars.push(String.fromCharCode(hashArray[i]));
+    }
+    return btoa(chars.join(''))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+
   const login = async () => {
-    console.log('🚀 Login button clicked - starting Device Flow...');
+    console.log('🚀 Login button clicked - starting PKCE OAuth Flow...');
     setLoading(true);
     setError(null);
     
     try {
-      // Use GitHub Device Flow for client-side authentication
-      console.log('🔄 Starting GitHub Device Flow...');
-      alert('Device Flow starting... Check console for logs.');
+      // Generate PKCE parameters
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = await generateCodeChallenge(codeVerifier);
+      const state = Math.random().toString(36).substring(7);
       
-      // Step 1: Request device and user codes
-      const deviceResponse = await fetch('https://github.com/login/device/code', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: GITHUB_CLIENT_ID,
-          scope: 'user:email',
-        }),
+      // Store PKCE parameters for later use
+      localStorage.setItem('oauth_code_verifier', codeVerifier);
+      localStorage.setItem('oauth_state', state);
+      
+      // Build OAuth URL with PKCE
+      let baseUrl;
+      if (window.location.hostname === 'mannyurbano.github.io') {
+        baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+      } else {
+        baseUrl = window.location.origin;
+      }
+      
+      const params = new URLSearchParams({
+        client_id: GITHUB_CLIENT_ID,
+        redirect_uri: baseUrl,
+        scope: 'user:email',
+        state: state,
+        response_type: 'code',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256'
       });
       
-      if (!deviceResponse.ok) {
-        throw new Error('Failed to initiate device flow');
-      }
+      const oauthUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
       
-      const deviceData = await deviceResponse.json();
+      console.log('🔄 Redirecting to GitHub OAuth with PKCE...');
+      console.log('OAuth URL:', oauthUrl);
       
-      // Step 2: Show user the verification URL and code
-      const userCode = deviceData.user_code;
-      const verificationUri = deviceData.verification_uri;
-      const deviceCode = deviceData.device_code;
-      const interval = deviceData.interval || 5;
-      
-      // Open GitHub device verification in new tab
-      window.open(verificationUri, '_blank');
-      
-      // Show user code to user
-      const userConfirmed = window.confirm(
-        `Please go to ${verificationUri} and enter this code:\n\n${userCode}\n\nClick OK after you've authorized the app.\n\n(The verification page has been opened in a new tab)`
-      );
-      
-      if (!userConfirmed) {
-        setLoading(false);
-        return;
-      }
-      
-      // Step 3: Poll for access token
-      console.log('🔄 Polling for access token...');
-      
-      const pollForToken = async () => {
-        const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            client_id: GITHUB_CLIENT_ID,
-            device_code: deviceCode,
-            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-          }),
-        });
-        
-        const tokenData = await tokenResponse.json();
-        
-        if (tokenData.access_token) {
-          // Success! We have an access token
-          console.log('✅ Access token received!');
-          
-          // Fetch user profile
-          const userData = await fetchUserProfile(tokenData.access_token);
-          if (userData) {
-            setUser(userData);
-            setIsAuthenticated(true);
-            const authorized = await checkAuthorization(userData.login);
-            setIsAuthorized(authorized);
-            
-            // Store auth state
-            localStorage.setItem('github_auth_token', tokenData.access_token);
-            localStorage.setItem('github_user', JSON.stringify(userData));
-          }
-          
-          setLoading(false);
-          return true;
-        } else if (tokenData.error === 'authorization_pending') {
-          // Still waiting for user authorization
-          return false;
-        } else if (tokenData.error === 'slow_down') {
-          // Rate limited, wait longer
-          return false;
-        } else {
-          // Other error
-          throw new Error(`Device flow error: ${tokenData.error}`);
-        }
-      };
-      
-      // Poll every few seconds
-      const maxAttempts = 20; // 20 attempts = ~2 minutes
-      let attempts = 0;
-      
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        
-        try {
-          const success = await pollForToken();
-          if (success) {
-            clearInterval(pollInterval);
-          } else if (attempts >= maxAttempts) {
-            clearInterval(pollInterval);
-            setError('Device authorization timed out. Please try again.');
-            setLoading(false);
-          }
-        } catch (error) {
-          clearInterval(pollInterval);
-          console.error('Token polling error:', error);
-          setError('Failed to complete device authorization');
-          setLoading(false);
-        }
-      }, interval * 1000);
+      // Redirect to GitHub OAuth
+      window.location.href = oauthUrl;
       
     } catch (error) {
-      console.error('Device flow error:', error);
-      setError('Failed to start device authorization flow');
+      console.error('PKCE OAuth error:', error);
+      setError('Failed to start OAuth authorization');
       setLoading(false);
     }
   };

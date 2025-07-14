@@ -154,7 +154,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       if (authCode) {
-        console.log('🔄 Authorization code received, exchanging for access token with PKCE...');
+        console.log('🔄 Authorization code received, exchanging for access token...');
         // Clear the URL search params
         window.history.replaceState({}, document.title, window.location.pathname);
         
@@ -165,10 +165,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error('Invalid state parameter - possible CSRF attack');
           }
           
-          // Get stored code verifier
-          const codeVerifier = localStorage.getItem('oauth_code_verifier');
-          if (!codeVerifier) {
-            throw new Error('Missing code verifier');
+          // Get the redirect URI that was used
+          let redirectUri;
+          if (window.location.hostname === 'mannyurbano.github.io') {
+            redirectUri = window.location.origin + window.location.pathname.replace(/\/$/, '');
+          } else {
+            redirectUri = window.location.origin;
           }
           
           // Exchange authorization code for access token using Railway OAuth proxy
@@ -182,17 +184,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             body: JSON.stringify({
               client_id: GITHUB_CLIENT_ID,
               code: authCode,
-              code_verifier: codeVerifier,
+              redirect_uri: redirectUri,
             }),
           });
           
           const tokenData = await tokenResponse.json();
           
           if (tokenData.access_token) {
-            console.log('✅ Access token received via PKCE!');
+            console.log('✅ Access token received!');
             
-            // Clean up stored PKCE parameters
-            localStorage.removeItem('oauth_code_verifier');
+            // Clean up stored OAuth parameters
             localStorage.removeItem('oauth_state');
             
             // Fetch user profile with the access token
@@ -211,10 +212,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error(`Token exchange failed: ${tokenData.error || 'Unknown error'}`);
           }
         } catch (error) {
-          console.error('PKCE token exchange error:', error);
+          console.error('OAuth token exchange error:', error);
           setError('Failed to complete authentication');
-          // Clean up stored PKCE parameters on error
-          localStorage.removeItem('oauth_code_verifier');
+          // Clean up stored OAuth parameters on error
           localStorage.removeItem('oauth_state');
         }
       } else {
@@ -242,51 +242,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initializeAuth();
   }, [initializeAuth]);
 
-  // PKCE helper functions
-  const generateCodeVerifier = () => {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    const chars: string[] = [];
-    for (let i = 0; i < array.length; i++) {
-      chars.push(String.fromCharCode(array[i]));
-    }
-    return btoa(chars.join(''))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  };
-
-  const generateCodeChallenge = async (verifier: string) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = new Uint8Array(digest);
-    const chars: string[] = [];
-    for (let i = 0; i < hashArray.length; i++) {
-      chars.push(String.fromCharCode(hashArray[i]));
-    }
-    return btoa(chars.join(''))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  };
-
-  const login = async () => {
-    console.log('🚀 Login button clicked - starting PKCE OAuth Flow...');
+  const login = () => {
+    console.log('🚀 Login button clicked - starting OAuth Flow...');
     setLoading(true);
     setError(null);
     
     try {
-      // Generate PKCE parameters
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
+      // Generate state parameter for CSRF protection
       const state = Math.random().toString(36).substring(7);
-      
-      // Store PKCE parameters for later use
-      localStorage.setItem('oauth_code_verifier', codeVerifier);
       localStorage.setItem('oauth_state', state);
       
-      // Build OAuth URL with PKCE
+      // Build OAuth URL for server-side flow
       let baseUrl;
       if (window.location.hostname === 'mannyurbano.github.io') {
         baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
@@ -299,21 +265,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         redirect_uri: baseUrl,
         scope: 'user:email',
         state: state,
-        response_type: 'code',
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256'
+        response_type: 'code'
       });
       
       const oauthUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
       
-      console.log('🔄 Redirecting to GitHub OAuth with PKCE...');
+      console.log('🔄 Redirecting to GitHub OAuth...');
       console.log('OAuth URL:', oauthUrl);
       
       // Redirect to GitHub OAuth
       window.location.href = oauthUrl;
       
     } catch (error) {
-      console.error('PKCE OAuth error:', error);
+      console.error('OAuth error:', error);
       setError('Failed to start OAuth authorization');
       setLoading(false);
     }

@@ -73,19 +73,19 @@ app.get('/auth/user', (req, res) => {
   }
 });
 
-// --- PKCE OAuth Proxy Endpoint ---
+// --- OAuth Proxy Endpoint (Server-side with client secret) ---
 app.post('/oauth/github/token', async (req, res) => {
   try {
-    const { client_id, code, code_verifier } = req.body;
+    const { client_id, code, redirect_uri } = req.body;
 
     // Validate required parameters
-    if (!client_id || !code || !code_verifier) {
+    if (!client_id || !code) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    console.log('🔄 Exchanging authorization code for access token via PKCE...');
+    console.log('🔄 Exchanging authorization code for access token...');
 
-    // Exchange authorization code for access token with GitHub
+    // Exchange authorization code for access token with GitHub (server-side)
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
@@ -94,8 +94,9 @@ app.post('/oauth/github/token', async (req, res) => {
       },
       body: new URLSearchParams({
         client_id,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        code_verifier,
+        redirect_uri,
       }),
     });
 

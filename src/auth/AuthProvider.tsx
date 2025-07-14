@@ -199,7 +199,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem('github_oauth_state', state);
     
     // Build OAuth URL for implicit flow - DO NOT encode the client_id as it's already clean
-    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+    // Use just origin (no trailing slash) to match GitHub OAuth app configuration
+    const redirectUri = encodeURIComponent(window.location.origin);
     const scope = encodeURIComponent('user:email');
     
     // Use implicit flow (response_type=token) for client-side OAuth

@@ -428,9 +428,95 @@ const getItemSpriteUrlSync = (itemName: string): string | null => {
   return `https://www.serebii.net/itemdex/sprites/${itemSlug.replace(/-/g, '')}.png`;
 };
 
+// Get Pokemon sprite URL using PokemonDB as primary source with PokeAPI fallback
+const getPokemonSpriteUrl = (pokemonName: string): string | null => {
+  // Get the base Pokemon ID for fallback
+  let pokemonId = POKEMON_ID_MAP[pokemonName] || POKEMON_ID_MAP[pokemonName.replace(/[-\s]/g, '')] || 0;
+  
+  // If not found, try common alternate forms
+  if (pokemonId === 0) {
+    const alternateNames = [
+      pokemonName + '-Incarnate',
+      pokemonName + '-Therian',
+      pokemonName.replace('-Incarnate', ''),
+      pokemonName.replace('-Therian', ''),
+    ];
+    
+    for (const altName of alternateNames) {
+      if (POKEMON_ID_MAP[altName]) {
+        pokemonId = POKEMON_ID_MAP[altName];
+        break;
+      }
+    }
+  }
+  
+  // Create a mapping for Pokemon forms to PokemonDB sprite names
+  const pokemonFormMap: { [key: string]: string } = {
+    // Calyrex forms
+    'Calyrex-Shadow': 'calyrex-shadow-rider',
+    'Calyrex-Ice': 'calyrex-ice-rider',
+    
+    // Urshifu forms
+    'Urshifu-Single': 'urshifu-single-strike',
+    'Urshifu-Rapid': 'urshifu-rapid-strike',
+    'Urshifu-Rapid-Strike': 'urshifu-rapid-strike',
+    
+    // Therian/Incarnate forms
+    'Tornadus-Incarnate': 'tornadus-incarnate',
+    'Tornadus-Therian': 'tornadus-therian',
+    'Thundurus-Incarnate': 'thundurus-incarnate',
+    'Thundurus-Therian': 'thundurus-therian',
+    'Landorus-Incarnate': 'landorus-incarnate',
+    'Landorus-Therian': 'landorus-therian',
+    
+    // Rotom forms
+    'Rotom-Heat': 'rotom-heat',
+    'Rotom-Wash': 'rotom-wash',
+    'Rotom-Frost': 'rotom-frost',
+    'Rotom-Fan': 'rotom-fan',
+    'Rotom-Mow': 'rotom-mow',
+    
+    // Add more forms as needed
+  };
+  
+  const formSlug = pokemonFormMap[pokemonName];
+  if (formSlug) {
+    // Use PokemonDB for specific forms (much better quality)
+    return `https://img.pokemondb.net/sprites/home/normal/${formSlug}.png`;
+  }
+  
+  // For base forms, also try PokemonDB first, then fall back to PokeAPI
+  if (pokemonId > 0) {
+    // Convert Pokemon name to lowercase with hyphens for PokemonDB
+    const pokemonSlug = pokemonName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return `https://img.pokemondb.net/sprites/home/normal/${pokemonSlug}.png`;
+  }
+  
+  // Final fallback to PokeAPI
+  return null;
+};
+
 // Test function to verify Pokemon and item parsing
 // Call this from browser console: window.testPokemonItemParsing()
 const testPokemonItemParsing = () => {
+  console.log('=== Testing Pokemon Form Sprites ===');
+  const testForms = [
+    'Calyrex-Shadow',
+    'Calyrex-Ice',
+    'Tornadus-Therian',
+    'Landorus-Therian',
+    'Urshifu-Rapid',
+    'Urshifu-Single',
+    'Rotom-Wash',
+    'Rotom-Heat'
+  ];
+  
+  testForms.forEach(form => {
+    const pokemonDBUrl = getPokemonSpriteUrl(form);
+    console.log(`${form}: ${pokemonDBUrl || 'No PokemonDB sprite found'}`);
+  });
+  
+  console.log('=== Testing Pokemon ID Lookup ===');
   const testCases = [
     'Tornadus',
     'Tornadus-Therian',
@@ -979,7 +1065,23 @@ const PokemonSprite: React.FC<{
     }
   }, [heldItem, showItem]);
   
-  if (pokemonId === 0) {
+  // Try to get PokemonDB sprite URL first (better quality)
+  const pokemonDBSpriteUrl = getPokemonSpriteUrl(pokemon);
+  const [currentSpriteUrl, setCurrentSpriteUrl] = React.useState<string | null>(null);
+  const [hasError, setHasError] = React.useState<boolean>(false);
+  
+  // Set initial sprite URL
+  React.useEffect(() => {
+    if (pokemonDBSpriteUrl) {
+      setCurrentSpriteUrl(pokemonDBSpriteUrl);
+      setHasError(false);
+    } else if (pokemonId > 0) {
+      setCurrentSpriteUrl(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`);
+      setHasError(false);
+    }
+  }, [pokemon, pokemonDBSpriteUrl, pokemonId]);
+  
+  if (pokemonId === 0 && !pokemonDBSpriteUrl) {
     return (
       <div 
         className={`pokemon-sprite-fallback ${className}`}
@@ -998,12 +1100,19 @@ const PokemonSprite: React.FC<{
       title={heldItem ? `${pokemon} @ ${heldItem}` : pokemon}
     >
       <img
-        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`}
+        src={currentSpriteUrl || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`}
         alt={pokemon}
         className="pokemon-sprite"
         style={{ width: size, height: size }}
         onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
+          // If PokemonDB failed and we haven't tried PokeAPI yet, fall back to PokeAPI
+          if (!hasError && pokemonDBSpriteUrl && pokemonId > 0) {
+            setCurrentSpriteUrl(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`);
+            setHasError(true);
+          } else {
+            // If PokeAPI also failed, hide the image
+            (e.target as HTMLImageElement).style.display = 'none';
+          }
         }}
       />
       {itemSpriteUrl && (

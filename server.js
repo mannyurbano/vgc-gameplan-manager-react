@@ -65,18 +65,42 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
-app.get('/auth/user', (req, res) => {
-  if (req.isAuthenticated()) {
+app.get('/auth/user', async (req, res) => {
+  try {
+    // Check for Bearer token in Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ user: null, error: 'No valid token provided' });
+    }
+    
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    // Fetch user info from GitHub API using the token
+    const userResponse = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+    
+    if (!userResponse.ok) {
+      return res.status(401).json({ user: null, error: 'Invalid token' });
+    }
+    
+    const userData = await userResponse.json();
+    
     // Get authorized users from env var
     const authorizedUsers = (process.env.AUTHORIZED_USERS || '').split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
-    const githubLogin = req.user && req.user.username ? req.user.username.toLowerCase() : (req.user && req.user.login ? req.user.login.toLowerCase() : null);
+    const githubLogin = userData.login ? userData.login.toLowerCase() : null;
+    
     if (githubLogin && authorizedUsers.includes(githubLogin)) {
-      res.json({ user: req.user });
+      res.json({ user: userData });
     } else {
       res.status(401).json({ user: null, error: 'Not authorized' });
     }
-  } else {
-    res.status(401).json({ user: null });
+  } catch (error) {
+    console.error('Auth check error:', error);
+    res.status(500).json({ user: null, error: 'Internal server error' });
   }
 });
 

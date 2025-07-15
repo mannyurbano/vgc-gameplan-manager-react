@@ -20,9 +20,9 @@ interface GitHubUser {
   email: string;
 }
 
-// Configuration - Client-side OAuth flow
-// Replace this with your actual GitHub OAuth Client ID
-const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP'; // Your GitHub OAuth Client ID
+// Configuration for GitHub Pages + Railway setup
+const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP';
+const RAILWAY_BACKEND_URL = 'https://vgc-gameplan-manager-react-production.up.railway.app';
 
 // Development bypass - set to true for localhost development
 const BYPASS_AUTH_IN_DEV = process.env.NODE_ENV === 'development';
@@ -71,6 +71,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       console.error('Failed to fetch user profile:', error);
       return null;
+    }
+  }, []);
+
+  const checkAuthorizationWithBackend = useCallback(async (token: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${RAILWAY_BACKEND_URL}/auth/user`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.user !== null;
+      }
+      return false;
+    } catch (error) {
+      console.error('Authorization check failed:', error);
+      return false;
     }
   }, []);
 
@@ -128,8 +149,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
           
           // Exchange authorization code for access token using Railway OAuth proxy
-          const proxyUrl = 'https://vgc-gameplan-manager-react-production.up.railway.app/oauth/github/token';
-          const tokenResponse = await fetch(proxyUrl, {
+          const tokenResponse = await fetch(`${RAILWAY_BACKEND_URL}/oauth/github/token`, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',
@@ -156,9 +176,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               setUser(userData);
               setIsAuthenticated(true);
               
-              // Store auth state
-              localStorage.setItem('github_auth_token', tokenData.access_token);
-              localStorage.setItem('github_user', JSON.stringify(userData));
+              // Check authorization with Railway backend
+              const authorized = await checkAuthorizationWithBackend(tokenData.access_token);
+              setIsAuthorized(authorized);
+              
+              if (authorized) {
+                // Store auth state only if authorized
+                localStorage.setItem('github_auth_token', tokenData.access_token);
+                localStorage.setItem('github_user', JSON.stringify(userData));
+                console.log('✅ User authorized and logged in');
+              } else {
+                console.log('❌ User not authorized');
+                setError(`Access denied. User ${userData.login} is not authorized for this application.`);
+              }
             }
           } else {
             throw new Error(`Token exchange failed: ${tokenData.error || 'Unknown error'}`);
@@ -178,18 +208,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const userData = JSON.parse(storedUser);
           setUser(userData);
           setIsAuthenticated(true);
+          
+          // Re-validate authorization with backend
+          const authorized = await checkAuthorizationWithBackend(storedToken);
+          setIsAuthorized(authorized);
+          
+          if (!authorized) {
+            console.log('❌ Stored user no longer authorized');
+            setError(`Access denied. User ${userData.login} is not authorized for this application.`);
+            // Clear stored auth data
+            localStorage.removeItem('github_auth_token');
+            localStorage.removeItem('github_user');
+            setIsAuthenticated(false);
+            setUser(null);
+          }
         }
-      }
-
-      // Always check with backend if user is authorized
-      const response = await fetch('/auth/user', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        setIsAuthorized(true);
-        setUser(data.user);
-      } else {
-        setIsAuthorized(false);
-        setUser(null);
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -197,7 +230,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, checkAuthorizationWithBackend]);
 
   useEffect(() => {
     initializeAuth();
@@ -248,11 +281,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Clear stored auth data
     localStorage.removeItem('github_auth_token');
     localStorage.removeItem('github_user');
-    localStorage.removeItem('github_oauth_state');
+    localStorage.removeItem('oauth_state');
     
     setIsAuthenticated(false);
     setIsAuthorized(false);
     setUser(null);
+    setError(null);
   };
 
   const value: AuthContextType = {

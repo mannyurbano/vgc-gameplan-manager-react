@@ -14,6 +14,14 @@ interface CloudFile {
   modifiedTime?: string;
 }
 
+// Google Drive API configuration - these are safe to expose in frontend
+// API Key should be restricted by domain in Google Cloud Console
+const GOOGLE_DRIVE_CONFIG = {
+  apiKey: 'YOUR_GOOGLE_API_KEY_HERE', // Replace with actual API key
+  clientId: 'YOUR_GOOGLE_CLIENT_ID_HERE', // Replace with actual client ID
+  enabled: false // Set to true when you have valid credentials
+};
+
 export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   isOpen,
   onClose,
@@ -87,14 +95,16 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   const handleGoogleDriveAuthInternal = useCallback(async () => {
     try {
       const googleAPI = (window as any).GoogleDriveAPI;
-      const apiKey = process.env.REACT_APP_GOOGLE_API_KEY;
-      const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+      
+      if (!GOOGLE_DRIVE_CONFIG.enabled) {
+        throw new Error('Google Drive integration is not configured. Please contact the administrator.');
+      }
 
-      if (!apiKey || !clientId) {
+      if (!GOOGLE_DRIVE_CONFIG.apiKey || !GOOGLE_DRIVE_CONFIG.clientId) {
         throw new Error('Google API credentials not configured. Please contact the administrator.');
       }
 
-      const gapi = await googleAPI.init(apiKey, clientId);
+      const gapi = await googleAPI.init(GOOGLE_DRIVE_CONFIG.apiKey, GOOGLE_DRIVE_CONFIG.clientId);
       const authInstance = gapi.auth2.getAuthInstance();
       
       if (!authInstance.isSignedIn.get()) {
@@ -117,6 +127,11 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   }, []);
 
   const handleGoogleDriveAuth = useCallback(async () => {
+    if (!GOOGLE_DRIVE_CONFIG.enabled) {
+      setError('Google Drive integration is not configured. Please use local file import instead.');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -179,7 +194,7 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
     }
   }, [onImport, onClose]);
 
-  // iCloud integration (using WebDAV)
+  // iCloud integration (using native file picker)
   const handleICloudAuth = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -226,8 +241,9 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
             📁 Local File
           </button>
           <button 
-            className={`tab ${activeTab === 'gdrive' ? 'active' : ''}`}
+            className={`tab ${activeTab === 'gdrive' ? 'active' : ''} ${!GOOGLE_DRIVE_CONFIG.enabled ? 'disabled' : ''}`}
             onClick={() => setActiveTab('gdrive')}
+            disabled={!GOOGLE_DRIVE_CONFIG.enabled}
           >
             ☁️ Google Drive
           </button>
@@ -280,7 +296,14 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
 
           {activeTab === 'gdrive' && (
             <div className="tab-content">
-              {gdriveFiles.length === 0 ? (
+              {!GOOGLE_DRIVE_CONFIG.enabled ? (
+                <div className="cloud-auth">
+                  <div className="cloud-icon">☁️</div>
+                  <h4>Google Drive Not Configured</h4>
+                  <p>Google Drive integration is not currently configured.</p>
+                  <p>Please use local file import instead.</p>
+                </div>
+              ) : gdriveFiles.length === 0 ? (
                 <div className="cloud-auth">
                   <div className="cloud-icon">☁️</div>
                   <h4>Connect to Google Drive</h4>

@@ -36,11 +36,12 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
 
   // Handle file selection
   const handleFileSelect = useCallback((file: File) => {
-    if (file.type === 'application/json' || file.name.endsWith('.json')) {
+    if (file.type === 'application/json' || file.name.endsWith('.json') || 
+        file.type === 'text/markdown' || file.name.endsWith('.md')) {
       onImport(file);
       onClose();
     } else {
-      setError('Please select a valid JSON file');
+      setError('Please select a valid JSON or Markdown file');
     }
   }, [onImport, onClose]);
 
@@ -80,14 +81,15 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
     setIsDragActive(false);
     
     const files = Array.from(e.dataTransfer.files);
-    const jsonFile = files.find(file => 
-      file.type === 'application/json' || file.name.endsWith('.json')
+    const validFile = files.find(file => 
+      file.type === 'application/json' || file.name.endsWith('.json') ||
+      file.type === 'text/markdown' || file.name.endsWith('.md')
     );
     
-    if (jsonFile) {
-      handleFileSelect(jsonFile);
+    if (validFile) {
+      handleFileSelect(validFile);
     } else {
-      setError('Please drop a valid JSON file');
+      setError('Please drop a valid JSON or Markdown file');
     }
   }, [handleFileSelect]);
 
@@ -204,7 +206,7 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
       // In a real implementation, you'd need to integrate with iCloud WebDAV API
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.json';
+      input.accept = '.json,.md';
       input.multiple = false;
       
       input.onchange = (e) => {
@@ -275,18 +277,18 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
                 <input 
                   ref={fileInputRef}
                   type="file"
-                  accept=".json"
+                  accept=".json,.md"
                   onChange={handleFileInputChange}
                   style={{ display: 'none' }}
                 />
                 <div className="dropzone-content">
                   <div className="dropzone-icon">📁</div>
                   {isDragActive ? (
-                    <p>Drop the JSON file here...</p>
+                    <p>Drop the file here...</p>
                   ) : (
                     <>
-                      <p>Drag & drop a JSON file here, or click to select</p>
-                      <p className="dropzone-hint">Supports VGC gameplan export files</p>
+                      <p>Drag & drop a file here, or click to select</p>
+                      <p className="dropzone-hint">Supports JSON exports and Markdown gameplan files</p>
                     </>
                   )}
                 </div>

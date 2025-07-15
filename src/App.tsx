@@ -2395,45 +2395,127 @@ function App() {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const importedData = JSON.parse(e.target?.result as string);
+        const fileContent = e.target?.result as string;
         
-        // Validate the imported data structure
-        if (Array.isArray(importedData)) {
-          const validGameplans = importedData.filter(item => 
-            item.id && item.title && item.content && item.dateCreated && item.tags
-          );
+        // Determine file type and process accordingly
+        if (file.name.endsWith('.json')) {
+          // Process JSON file (existing logic)
+          const importedData = JSON.parse(fileContent);
           
-          if (validGameplans.length > 0) {
-            // Ask user if they want to merge or replace
-            const shouldMerge = window.confirm(
-              `Found ${validGameplans.length} valid gameplan(s). Click OK to merge with existing data, or Cancel to replace all data.`
+          // Validate the imported data structure
+          if (Array.isArray(importedData)) {
+            const validGameplans = importedData.filter(item => 
+              item.id && item.title && item.content && item.dateCreated && item.tags
             );
             
-            if (shouldMerge) {
-              // Merge: Add imported gameplans with new IDs to avoid conflicts
-              const mergedGameplans = [...gameplans];
-              validGameplans.forEach(gameplan => {
-                const newGameplan = {
-                  ...gameplan,
-                  id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
-                };
-                mergedGameplans.push(newGameplan);
-              });
-              setGameplans(mergedGameplans);
+            if (validGameplans.length > 0) {
+              // Ask user if they want to merge or replace
+              const shouldMerge = window.confirm(
+                `Found ${validGameplans.length} valid gameplan(s). Click OK to merge with existing data, or Cancel to replace all data.`
+              );
+              
+              if (shouldMerge) {
+                // Merge: Add imported gameplans with new IDs to avoid conflicts
+                const mergedGameplans = [...gameplans];
+                validGameplans.forEach(gameplan => {
+                  const newGameplan = {
+                    ...gameplan,
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                  };
+                  mergedGameplans.push(newGameplan);
+                });
+                setGameplans(mergedGameplans);
+              } else {
+                // Replace all data
+                setGameplans(validGameplans);
+              }
+              
+              alert(`Successfully imported ${validGameplans.length} gameplan(s)!`);
             } else {
-              // Replace all data
-              setGameplans(validGameplans);
+              alert('No valid gameplans found in the imported file.');
             }
-            
-            alert(`Successfully imported ${validGameplans.length} gameplan(s)!`);
           } else {
-            alert('No valid gameplans found in the imported file.');
+            alert('Invalid JSON file format. Please select a valid JSON file.');
+          }
+        } else if (file.name.endsWith('.md')) {
+          // Process Markdown file with YAML frontmatter
+          const lines = fileContent.split('\n');
+          let frontmatterEnd = -1;
+          let frontmatterStart = -1;
+          
+          // Find YAML frontmatter boundaries
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim() === '---') {
+              if (frontmatterStart === -1) {
+                frontmatterStart = i;
+              } else {
+                frontmatterEnd = i;
+                break;
+              }
+            }
+          }
+          
+          if (frontmatterStart !== -1 && frontmatterEnd !== -1) {
+            // Extract YAML frontmatter
+            const frontmatter = lines.slice(frontmatterStart + 1, frontmatterEnd).join('\n');
+            const content = lines.slice(frontmatterEnd + 1).join('\n');
+            
+                         // Simple YAML parser for basic key-value pairs
+             const metadata: any = {};
+             frontmatter.split('\n').forEach(line => {
+               const colonIndex = line.indexOf(':');
+               if (colonIndex !== -1) {
+                 const key = line.substring(0, colonIndex).trim();
+                 let value: any = line.substring(colonIndex + 1).trim();
+                 
+                 // Remove quotes if present
+                 if ((value.startsWith('"') && value.endsWith('"')) || 
+                     (value.startsWith("'") && value.endsWith("'"))) {
+                   value = value.slice(1, -1);
+                 }
+                 
+                 // Handle array values (basic support)
+                 if (value.startsWith('[') && value.endsWith(']')) {
+                   try {
+                     value = JSON.parse(value);
+                   } catch {
+                     // If JSON parsing fails, treat as comma-separated string array
+                     value = value.slice(1, -1).split(',').map((s: string) => s.trim().replace(/"/g, ''));
+                   }
+                 }
+                 
+                 metadata[key] = value;
+               }
+             });
+            
+                         // Create gameplan object
+             const gameplan: Gameplan = {
+               id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+               title: metadata.title || file.name.replace('.md', ''),
+               content: content.trim(),
+               dateCreated: metadata.dateCreated || new Date().toISOString().split('T')[0],
+               tags: Array.isArray(metadata.tags) ? metadata.tags : (metadata.tags ? [metadata.tags] : []),
+               season: metadata.season || '',
+               tournament: metadata.tournament || '',
+               format: metadata.format || 'VGC',
+               teamPokemon: Array.isArray(metadata.teamPokemon) ? metadata.teamPokemon : [],
+               rivalTeams: metadata.rivalTeams || {},
+               analysis: metadata.analysis || {}
+             };
+            
+            // Add to gameplans
+            const mergedGameplans = [...gameplans, gameplan];
+            setGameplans(mergedGameplans);
+            
+            alert(`Successfully imported "${gameplan.title}" from markdown file!`);
+          } else {
+            alert('Invalid markdown file format. Please ensure the file has YAML frontmatter.');
           }
         } else {
-          alert('Invalid file format. Please select a valid JSON file.');
+          alert('Unsupported file format. Please select a JSON or Markdown file.');
         }
       } catch (error) {
-        alert('Error reading file. Please make sure it\'s a valid JSON file.');
+        alert('Error reading file. Please make sure it\'s a valid JSON or Markdown file.');
         console.error('Import error:', error);
       }
     };
@@ -2966,7 +3048,7 @@ function App() {
       <input
         type="file"
         id="import-input"
-        accept=".json"
+        accept=".json,.md"
         onChange={handleImportFile}
         style={{ display: 'none' }}
       />

@@ -1696,10 +1696,10 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
               <h5>vs {selectedMatchup}</h5>
             </div>
             <div className="matchup-recommendation">
-              {/* Opponent's Team */}
+              {/* Rival's Team */}
               {matchups[selectedMatchup].opponentTeam && matchups[selectedMatchup].opponentTeam!.length > 0 && (
                 <div className="opponent-team-section">
-                  <strong>👥 Opponent's Team:</strong>
+                  <strong>👥 Rival's Team:</strong>
                   {matchups[selectedMatchup].pokepasteUrl && (
                     <a 
                       href={matchups[selectedMatchup].pokepasteUrl} 
@@ -1776,55 +1776,81 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                           color: '#e0e0e0',
                         }}
                       >
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 12 }}>
-                          {/* Opponent's Lead/Back */}
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 4 }}>Opponent's Lead</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {extractPokemonFromText(gp.opponentLead).map(pokemon => (
-                                <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
-                              ))}
-                              <span style={{ fontWeight: 500 }}>{gp.opponentLead}</span>
-                            </div>
-                            <div style={{ fontWeight: 600, color: '#f87171', marginTop: 8, marginBottom: 4 }}>Opponent's Back</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {extractPokemonFromText(gp.opponentBack).map(pokemon => (
-                                <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
-                              ))}
-                              <span style={{ fontWeight: 500 }}>{gp.opponentBack}</span>
-                            </div>
-                          </div>
-                          {/* My Lead/Back */}
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#60a5fa', marginBottom: 4 }}>My Lead</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {extractPokemonFromText(gp.myLead).map(pokemon => (
-                                <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
-                              ))}
-                              <span style={{ fontWeight: 500 }}>{gp.myLead}</span>
-                            </div>
-                            <div style={{ fontWeight: 600, color: '#60a5fa', marginTop: 8, marginBottom: 4 }}>My Back</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {extractPokemonFromText(gp.myBack).map(pokemon => (
-                                <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
-                              ))}
-                              <span style={{ fontWeight: 500 }}>{gp.myBack}</span>
+                        {/* Team Layout Section */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 16 }}>
+                          {/* My Team */}
+                          <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontWeight: 600, color: '#60a5fa', marginBottom: 8, fontSize: '14px' }}>My Team</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 4, fontSize: '12px' }}>Lead</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {extractPokemonFromText(gp.myLead).map(pokemon => (
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 4, fontSize: '12px' }}>Back</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {extractPokemonFromText(gp.myBack).map(pokemon => (
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                  ))}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          {/* Wincons */}
-                          <div style={{ minWidth: 180 }}>
-                            <div style={{ fontWeight: 600, color: '#fbbf24', marginBottom: 4 }}>Their Win Condition</div>
-                            <div style={{ marginBottom: 8 }}>{gp.theirWincon}</div>
-                            <div style={{ fontWeight: 600, color: '#34d399', marginBottom: 4 }}>My Win Condition</div>
-                            <div>{gp.myWincon}</div>
+                          
+                          {/* Rival's Team */}
+                          <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 8, fontSize: '14px' }}>Rival's Team</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 4, fontSize: '12px' }}>Lead</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {extractPokemonFromText(gp.opponentLead).map(pokemon => (
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 4, fontSize: '12px' }}>Back</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  {extractPokemonFromText(gp.opponentBack).map(pokemon => (
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Win Conditions Section */}
+                        <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: '#34d399', marginBottom: 4, fontSize: '13px' }}>My Win Condition</div>
+                            <div style={{ fontSize: '12px', lineHeight: '1.4' }}>{gp.myWincon}</div>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: '#fbbf24', marginBottom: 4, fontSize: '13px' }}>Rival's Win Condition</div>
+                            <div style={{ fontSize: '12px', lineHeight: '1.4' }}>{gp.theirWincon}</div>
                           </div>
                         </div>
                         {/* First 3 Turns */}
-                        <div style={{ marginTop: 12 }}>
-                          <div style={{ fontWeight: 600, color: '#a78bfa', marginBottom: 4 }}>First 3 Turns</div>
-                          <div style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ marginTop: 16 }}>
+                          <div style={{ fontWeight: 600, color: '#a78bfa', marginBottom: 8, fontSize: '13px' }}>First 3 Turns</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {gp.first3Turns.map((turn: string, i: number) => (
-                              <div key={i} style={{ marginBottom: 2 }}>{turn}</div>
+                              <div key={i} style={{ 
+                                padding: '8px 12px', 
+                                background: 'rgba(168, 139, 250, 0.1)', 
+                                borderRadius: '6px',
+                                border: '1px solid rgba(168, 139, 250, 0.2)',
+                                fontSize: '12px',
+                                lineHeight: '1.4'
+                              }}>
+                                <span style={{ fontWeight: 500, color: '#a78bfa' }}>Turn {i + 1}:</span> {turn.replace(/\btheir\b/gi, "rival's")}
+                              </div>
                             ))}
                           </div>
                         </div>

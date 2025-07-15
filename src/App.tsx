@@ -1849,7 +1849,7 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                                 fontSize: '12px',
                                 lineHeight: '1.4'
                               }}>
-                                <span style={{ fontWeight: 500, color: '#a78bfa' }}>Turn {i + 1}:</span> {turn.replace(/\btheir\b/gi, "rival's")}
+                                {turn.replace(/\btheir\b/gi, "rival's")}
                               </div>
                             ))}
                           </div>

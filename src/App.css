@@ -1774,6 +1774,30 @@ body {
   justify-content: flex-end;
 }
 
+/* Desktop optimization for held items */
+@media (min-width: 769px) {
+  .held-item-sprite {
+    max-width: 40px;
+    max-height: 40px;
+  }
+  
+  /* Team Composition section needs larger held items on desktop */
+  .pokemon-team-item .held-item-sprite {
+    width: 24px !important;
+    height: 24px !important;
+    bottom: -3px !important;
+    right: -3px !important;
+  }
+  
+  /* Opponent team section needs same size held items as Team Composition on desktop */
+  .opponent-team-item .held-item-sprite {
+    width: 24px !important;
+    height: 24px !important;
+    bottom: -3px !important;
+    right: -3px !important;
+  }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .mobile-menu-toggle,
@@ -1884,9 +1908,37 @@ body {
     height: 40px !important;
   }
   
+  .pokemon-mini {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+  
   .pokemon-mini img {
-    width: 20px !important;
-    height: 20px !important;
+    width: 24px !important;
+    height: 24px !important;
+  }
+  
+  .pokemon-mini .pokemon-sprite-container {
+    position: relative !important;
+    margin-bottom: 1px !important;
+  }
+
+  /* Make held items appropriately sized on mobile */
+  .held-item-sprite {
+    width: 10px !important;
+    height: 10px !important;
+    padding: 0px !important;
+    border-width: 1px !important;
+    position: absolute !important;
+    bottom: -2px !important;
+    right: -2px !important;
+    border-radius: 50% !important;
+    background: rgba(0, 0, 0, 0.8) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
   }
   
   /* Fix Pokemon sprite stretching on mobile */
@@ -1922,16 +1974,34 @@ body {
   }
 
   .pokemon-team-item {
-    padding: 0.4rem !important;
+    padding: 0.3rem !important;
     min-width: 0;
     overflow: hidden;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
   }
 
   .pokemon-team-item img {
-    width: 36px !important;
-    height: 36px !important;
+    width: 48px !important;
+    height: 48px !important;
     object-fit: contain !important;
     flex-shrink: 0;
+  }
+  
+  .pokemon-team-item .pokemon-sprite-container {
+    position: relative !important;
+    margin-bottom: 2px !important;
+  }
+  
+  /* Team Composition section needs larger held items on mobile */
+  .pokemon-team-item .held-item-sprite {
+    width: 30px !important;
+    height: 30px !important;
+    bottom: -4px !important;
+    right: -4px !important;
   }
   
   .matchup-tabs {
@@ -2006,16 +2076,34 @@ body {
   }
 
   .opponent-team-item {
-    padding: 0.4rem;
+    padding: 0.3rem;
     min-width: 0;
     overflow: hidden;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
   }
 
   .opponent-team-item img {
-    width: 36px !important;
-    height: 36px !important;
+    width: 48px !important;
+    height: 48px !important;
     object-fit: contain !important;
     flex-shrink: 0;
+  }
+  
+  .opponent-team-item .pokemon-sprite-container {
+    position: relative !important;
+    margin-bottom: 2px !important;
+  }
+  
+  /* Ensure opponent team held items are appropriately sized */
+  .opponent-team-item .held-item-sprite {
+    width: 25px !important;
+    height: 25px !important;
+    bottom: -2px !important;
+    right: -2px !important;
   }
   
   .opponent-team-name {
@@ -2088,6 +2176,29 @@ body {
   .pokemon-more {
     font-size: 0.7rem;
   }
+
+  /* Better mobile positioning for Pokemon names */
+  .pokemon-mini-name,
+  .pokemon-combo-name,
+  .pokemon-name-compact,
+  .opponent-team-name {
+    font-size: 0.6rem !important;
+    line-height: 1.1 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    margin-top: 2px !important;
+  }
+  
+  /* Improve lead/back section name positioning on mobile */
+  .lead-section .pokemon-combo-name,
+  .backs-section .pokemon-combo-name,
+  .likely-lead-item .pokemon-combo-name {
+    font-size: 0.55rem !important;
+    max-width: 40px !important;
+    text-align: center !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -2111,6 +2222,77 @@ body {
   
   .detail-actions, .edit-actions {
     justify-content: center;
+  }
+  
+  /* Hide Pokemon names only on very small screens to prevent clutter */
+  .pokemon-mini-name,
+  .pokemon-combo-name,
+  .pokemon-name-compact,
+  .opponent-team-name {
+    display: none !important;
+  }
+  
+  /* Hide all Pokemon names in lead/back sections on very small screens */
+  .lead-section .pokemon-combo-name,
+  .backs-section .pokemon-combo-name,
+  .likely-lead-item .pokemon-combo-name {
+    display: none !important;
+  }
+  
+  /* Make held items smaller on very small screens */
+  .held-item-sprite {
+    width: 8px !important;
+    height: 8px !important;
+    bottom: -1px !important;
+    right: -1px !important;
+  }
+  
+  /* Team Composition section needs larger held items on very small screens */
+  .pokemon-team-item .held-item-sprite {
+    width: 25px !important;
+    height: 25px !important;
+    bottom: -3px !important;
+    right: -3px !important;
+  }
+}
+
+/* Optimize Pokemon names on larger mobile devices (tablets) */
+@media (min-width: 481px) and (max-width: 768px) {
+  .pokemon-mini-name,
+  .pokemon-combo-name,
+  .pokemon-name-compact,
+  .opponent-team-name {
+    display: block !important;
+    font-size: 0.65rem !important;
+    line-height: 1.2 !important;
+    max-width: 100% !important;
+    text-align: center !important;
+  }
+  
+  /* Show Pokemon names in lead/back sections on tablets with better sizing */
+  .lead-section .pokemon-combo-name,
+  .backs-section .pokemon-combo-name,
+  .likely-lead-item .pokemon-combo-name {
+    display: block !important;
+    font-size: 0.6rem !important;
+    max-width: 50px !important;
+    text-align: center !important;
+  }
+  
+  /* Better held item sizing for tablets */
+  .held-item-sprite {
+    width: 12px !important;
+    height: 12px !important;
+    bottom: -2px !important;
+    right: -2px !important;
+  }
+  
+  /* Team Composition section needs appropriately sized held items on tablets */
+  .pokemon-team-item .held-item-sprite {
+    width: 10px !important;
+    height: 10px !important;
+    bottom: -2px !important;
+    right: -2px !important;
   }
 }
 

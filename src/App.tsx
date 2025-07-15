@@ -6,6 +6,27 @@ import { useAuth } from './auth/AuthProvider';
 import { CloudImportModal } from './CloudImportModal';
 import './App.css';
 
+// File System Access API types (for modern browsers)
+declare global {
+  interface Window {
+    showOpenFilePicker?: (options?: any) => Promise<FileSystemFileHandle[]>;
+    showSaveFilePicker?: (options?: any) => Promise<FileSystemFileHandle>;
+  }
+}
+
+interface FileSystemFileHandle {
+  name: string;
+  kind: 'file' | 'directory';
+  getFile(): Promise<File>;
+  createWritable(options?: any): Promise<FileSystemWritableFileStream>;
+}
+
+interface FileSystemWritableFileStream extends WritableStream {
+  write(data: any): Promise<void>;
+  seek(position: number): Promise<void>;
+  truncate(size: number): Promise<void>;
+}
+
 interface Gameplan {
   id: string;
   title: string;
@@ -24,6 +45,13 @@ interface Gameplan {
     rivalPressure?: string[];
     myWincon?: string[];
     theirWincon?: string[];
+  };
+  // Add tracking for original file information
+  originalFile?: {
+    name: string;
+    type: 'json' | 'markdown';
+    lastModified?: number;
+    handle?: FileSystemFileHandle; // For File System Access API
   };
 }
 
@@ -985,15 +1013,16 @@ const PokemonSprite: React.FC<{
           className="held-item-sprite"
           style={{
             position: 'absolute',
-            bottom: -3,
-            right: -3,
-            width: Math.max(24, size * 0.55),
-            height: Math.max(24, size * 0.55),
+            bottom: -2,
+            right: -2,
+            // Much smaller held items: max 16px, and use smaller percentage
+            width: Math.min(16, Math.max(8, size * 0.3)),
+            height: Math.min(16, Math.max(8, size * 0.3)),
             borderRadius: '50%',
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            border: '2px solid rgba(255, 255, 255, 0.9)',
-            padding: '2px',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
+            border: '1px solid rgba(255, 255, 255, 0.9)',
+            padding: '1px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.5)'
           }}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
@@ -2391,7 +2420,7 @@ function App() {
     linkElement.click();
   }, [gameplans]);
 
-  const processImportFile = useCallback((file: File) => {
+  const processImportFile = useCallback(async (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -2420,14 +2449,27 @@ function App() {
                 validGameplans.forEach(gameplan => {
                   const newGameplan = {
                     ...gameplan,
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    originalFile: {
+                      name: file.name,
+                      type: 'json' as const,
+                      lastModified: file.lastModified
+                    }
                   };
                   mergedGameplans.push(newGameplan);
                 });
                 setGameplans(mergedGameplans);
               } else {
                 // Replace all data
-                setGameplans(validGameplans);
+                const gameplansWithFileInfo = validGameplans.map(gameplan => ({
+                  ...gameplan,
+                  originalFile: {
+                    name: file.name,
+                    type: 'json' as const,
+                    lastModified: file.lastModified
+                  }
+                }));
+                setGameplans(gameplansWithFileInfo);
               }
               
               alert(`Successfully imported ${validGameplans.length} gameplan(s)!`);
@@ -2500,7 +2542,12 @@ function App() {
                format: metadata.format || 'VGC',
                teamPokemon: Array.isArray(metadata.teamPokemon) ? metadata.teamPokemon : [],
                rivalTeams: metadata.rivalTeams || {},
-               analysis: metadata.analysis || {}
+               analysis: metadata.analysis || {},
+               originalFile: {
+                 name: file.name,
+                 type: 'markdown' as const,
+                 lastModified: file.lastModified
+               }
              };
             
             // Add to gameplans
@@ -2704,6 +2751,159 @@ function App() {
     }
   }, []);
 
+  // Sync changes back to original file
+  const syncChangesToFile = useCallback(async (gameplan: Gameplan) => {
+    if (!gameplan.originalFile) {
+      alert('This gameplan was not imported from a file, so it cannot be synced back.');
+      return;
+    }
+
+    try {
+      // Check if File System Access API is available
+      if ('showSaveFilePicker' in window) {
+        // Modern browser - use File System Access API
+        const options = {
+          suggestedName: gameplan.originalFile.name,
+          types: [{
+            description: gameplan.originalFile.type === 'json' ? 'JSON File' : 'Markdown File',
+            accept: {
+              [gameplan.originalFile.type === 'json' ? 'application/json' : 'text/markdown']: [`.${gameplan.originalFile.type}`]
+            }
+          }]
+        };
+
+        try {
+          const fileHandle = await window.showSaveFilePicker!(options);
+          
+          // Convert gameplan back to original format
+          let content: string;
+          if (gameplan.originalFile.type === 'json') {
+            // Single gameplan JSON
+            const gameplanData = {
+              id: gameplan.id,
+              title: gameplan.title,
+              content: gameplan.content,
+              dateCreated: gameplan.dateCreated,
+              tags: gameplan.tags,
+              season: gameplan.season,
+              tournament: gameplan.tournament,
+              format: gameplan.format,
+              teamPokemon: gameplan.teamPokemon,
+              rivalTeams: gameplan.rivalTeams,
+              analysis: gameplan.analysis
+            };
+            content = JSON.stringify(gameplanData, null, 2);
+          } else {
+            // Markdown with YAML frontmatter
+            const frontmatter = {
+              title: gameplan.title,
+              tags: gameplan.tags,
+              season: gameplan.season || '',
+              tournament: gameplan.tournament || '',
+              format: gameplan.format || 'VGC',
+              author: 'Developer',
+              dateCreated: gameplan.dateCreated,
+              teamArchetype: gameplan.teamPokemon?.length ? `${gameplan.teamPokemon.length} Pokemon Team` : 'Custom Team',
+              coreStrategy: 'Updated strategy',
+              teamPokemon: gameplan.teamPokemon || []
+            };
+
+            const yamlString = Object.entries(frontmatter)
+              .filter(([_, value]) => value !== undefined && value !== '')
+              .map(([key, value]) => {
+                if (Array.isArray(value)) {
+                  return `${key}: [${value.map(v => `"${v}"`).join(', ')}]`;
+                }
+                return `${key}: "${value}"`;
+              })
+              .join('\n');
+
+            content = `---\n${yamlString}\n---\n\n${gameplan.content}`;
+          }
+
+          // Write to file
+          const writable = await fileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+
+          alert(`Changes successfully synced to ${fileHandle.name}!`);
+                 } catch (error: any) {
+           if (error.name === 'AbortError') {
+             // User cancelled the save dialog
+             return;
+           }
+           throw error;
+         }
+      } else {
+        // Fallback for older browsers - trigger download
+        let content: string;
+        let filename: string;
+        let mimeType: string;
+
+        if (gameplan.originalFile.type === 'json') {
+          const gameplanData = {
+            id: gameplan.id,
+            title: gameplan.title,
+            content: gameplan.content,
+            dateCreated: gameplan.dateCreated,
+            tags: gameplan.tags,
+            season: gameplan.season,
+            tournament: gameplan.tournament,
+            format: gameplan.format,
+            teamPokemon: gameplan.teamPokemon,
+            rivalTeams: gameplan.rivalTeams,
+            analysis: gameplan.analysis
+          };
+          content = JSON.stringify(gameplanData, null, 2);
+          filename = gameplan.originalFile.name;
+          mimeType = 'application/json';
+        } else {
+          const frontmatter = {
+            title: gameplan.title,
+            tags: gameplan.tags,
+            season: gameplan.season || '',
+            tournament: gameplan.tournament || '',
+            format: gameplan.format || 'VGC',
+            author: 'Developer',
+            dateCreated: gameplan.dateCreated,
+            teamArchetype: gameplan.teamPokemon?.length ? `${gameplan.teamPokemon.length} Pokemon Team` : 'Custom Team',
+            coreStrategy: 'Updated strategy',
+            teamPokemon: gameplan.teamPokemon || []
+          };
+
+          const yamlString = Object.entries(frontmatter)
+            .filter(([_, value]) => value !== undefined && value !== '')
+            .map(([key, value]) => {
+              if (Array.isArray(value)) {
+                return `${key}: [${value.map(v => `"${v}"`).join(', ')}]`;
+              }
+              return `${key}: "${value}"`;
+            })
+            .join('\n');
+
+          content = `---\n${yamlString}\n---\n\n${gameplan.content}`;
+          filename = gameplan.originalFile.name;
+          mimeType = 'text/markdown';
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', url);
+        linkElement.setAttribute('download', filename);
+        linkElement.click();
+        
+        URL.revokeObjectURL(url);
+
+        alert(`Updated file downloaded as ${filename}. Please replace your original file with this updated version.`);
+      }
+    } catch (error) {
+      console.error('Error syncing changes:', error);
+      alert('Failed to sync changes to file. Please try again or use the export feature.');
+    }
+  }, []);
+
   return (
     <div className="app">
       <AppHeader 
@@ -2900,6 +3100,11 @@ function App() {
                   <button onClick={() => exportToPDF(selectedGameplan)} className="btn btn-info btn-sm">
                     📄 Export PDF
                   </button>
+                  {selectedGameplan.originalFile && (
+                    <button onClick={() => syncChangesToFile(selectedGameplan)} className="btn btn-success btn-sm">
+                      🔄 Sync Changes
+                    </button>
+                  )}
                   <button onClick={() => handleEditGameplan(selectedGameplan)} className="btn btn-primary btn-sm">
                     Edit Gameplan
                   </button>
@@ -2950,6 +3155,11 @@ function App() {
                   <button onClick={saveGameplan} className="btn btn-success btn-sm">
                     {isEditing ? 'Update' : 'Create'} Gameplan
                   </button>
+                  {isEditing && selectedGameplan?.originalFile && (
+                    <button onClick={() => syncChangesToFile(selectedGameplan)} className="btn btn-info btn-sm">
+                      🔄 Sync Changes
+                    </button>
+                  )}
                 </div>
               </div>
               

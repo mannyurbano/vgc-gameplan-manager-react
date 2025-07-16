@@ -4,6 +4,7 @@ interface CloudImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (file: File) => void;
+  onBulkImport?: (files: FileList | File[]) => void;
 }
 
 interface CloudFile {
@@ -25,7 +26,8 @@ const GOOGLE_DRIVE_CONFIG = {
 export const CloudImportModal: React.FC<CloudImportModalProps> = ({
   isOpen,
   onClose,
-  onImport
+  onImport,
+  onBulkImport
 }) => {
   const [activeTab, setActiveTab] = useState<'local' | 'gdrive' | 'icloud'>('local');
   const [isLoading, setIsLoading] = useState(false);
@@ -45,17 +47,38 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
     }
   }, [onImport, onClose]);
 
+  // Handle multiple file selection
+  const handleMultipleFileSelect = useCallback((files: FileList | File[]) => {
+    if (onBulkImport) {
+      onBulkImport(files);
+      onClose();
+    } else {
+      // Fallback to single file import for each file
+      Array.from(files).forEach(file => {
+        if (file.type === 'application/json' || file.name.endsWith('.json') || 
+            file.type === 'text/markdown' || file.name.endsWith('.md')) {
+          onImport(file);
+        }
+      });
+      onClose();
+    }
+  }, [onImport, onBulkImport, onClose]);
+
   // Handle file input change
   const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      if (files.length === 1) {
+        handleFileSelect(files[0]);
+      } else {
+        handleMultipleFileSelect(files);
+      }
     }
     // Reset input
     if (event.target) {
       event.target.value = '';
     }
-  }, [handleFileSelect]);
+  }, [handleFileSelect, handleMultipleFileSelect]);
 
   // Drag and drop handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -81,17 +104,21 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
     setIsDragActive(false);
     
     const files = Array.from(e.dataTransfer.files);
-    const validFile = files.find(file => 
+    const validFiles = files.filter(file => 
       file.type === 'application/json' || file.name.endsWith('.json') ||
       file.type === 'text/markdown' || file.name.endsWith('.md')
     );
     
-    if (validFile) {
-      handleFileSelect(validFile);
+    if (validFiles.length > 0) {
+      if (validFiles.length === 1) {
+        handleFileSelect(validFiles[0]);
+      } else {
+        handleMultipleFileSelect(validFiles);
+      }
     } else {
-      setError('Please drop a valid JSON or Markdown file');
+      setError('Please drop valid JSON or Markdown files');
     }
-  }, [handleFileSelect]);
+  }, [handleFileSelect, handleMultipleFileSelect]);
 
   // Google Drive integration
   const handleGoogleDriveAuthInternal = useCallback(async () => {
@@ -278,6 +305,7 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
                   ref={fileInputRef}
                   type="file"
                   accept=".json,.md"
+                  multiple
                   onChange={handleFileInputChange}
                   style={{ display: 'none' }}
                 />
@@ -287,8 +315,8 @@ export const CloudImportModal: React.FC<CloudImportModalProps> = ({
                     <p>Drop the file here...</p>
                   ) : (
                     <>
-                      <p>Drag & drop a file here, or click to select</p>
-                      <p className="dropzone-hint">Supports JSON exports and Markdown gameplan files</p>
+                      <p>Drag & drop files here, or click to select</p>
+                      <p className="dropzone-hint">Supports JSON exports and Markdown gameplan files (multiple files supported)</p>
                     </>
                   )}
                 </div>

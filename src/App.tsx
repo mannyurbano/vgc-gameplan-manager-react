@@ -1390,6 +1390,8 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   const [selectedPokemonForCalcs, setSelectedPokemonForCalcs] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  
+
 
   // Extract damage calculations for a specific matchup
   const extractDamageCalcs = (content: string, matchup: string) => {
@@ -1459,6 +1461,8 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   useEffect(() => {
     setSelectedPokemonForCalcs('');
   }, [selectedMatchup]);
+
+
 
   // Click outside handler to close dropdown
   useEffect(() => {
@@ -1645,12 +1649,33 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
           
           // Extract opponent's team and Pokepaste URL
           if (nextLine.toLowerCase().includes('opponent team:') || nextLine.toLowerCase().includes("opponent's team:") || nextLine.toLowerCase().includes('pokepaste')) {
+            console.log(`Found opponent team line: "${nextLine}"`);
 
-            // Look for Pokepaste URL
-            const urlMatch = nextLine.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-zA-Z0-9]+)\)/);
+            // Look for Pokepaste URL in the current line
+            let urlMatch = nextLine.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-zA-Z0-9-]+)\)/);
             if (urlMatch) {
               pokepasteUrl = urlMatch[1];
+              console.log(`Found pokepaste URL in current line: ${pokepasteUrl}`);
+            } else {
+              console.log(`No pokepaste URL in current line, checking next lines...`);
+              // If not found in current line, look in the next few lines
+              for (let k = j + 1; k < lines.length && k < j + 5; k++) {
+                const urlLine = lines[k].trim();
+                console.log(`Checking line ${k}: "${urlLine}"`);
+                urlMatch = urlLine.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-zA-Z0-9-]+)\)/);
+                if (urlMatch) {
+                  pokepasteUrl = urlMatch[1];
+                  console.log(`Found pokepaste URL in line ${k}: ${pokepasteUrl}`);
+                  break;
+                }
+                // Stop if we hit a line that starts with a dash (team member) or is empty
+                if (urlLine.startsWith('-') || urlLine === '') {
+                  console.log(`Stopping search at line ${k} (dash or empty)`);
+                  break;
+                }
+              }
             }
+            console.log(`Final pokepaste URL for ${opponentName}: ${pokepasteUrl}`);
             
             // Extract team members with items
             for (let k = j + 1; k < lines.length && k < j + 15; k++) {
@@ -1734,6 +1759,11 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   
   console.log('MatchupSelector - matchups found:', matchupKeys);
   console.log('MatchupSelector - matchups object:', matchups);
+  console.log('Selected matchup:', selectedMatchup);
+  if (selectedMatchup && matchups[selectedMatchup]) {
+    console.log('Selected matchup data:', matchups[selectedMatchup]);
+    console.log('Pokepaste URL:', matchups[selectedMatchup].pokepasteUrl);
+  }
 
   if (matchupKeys.length === 0) {
     console.log('MatchupSelector - no matchups found, returning null');
@@ -1821,6 +1851,82 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
       }
     }
     return notes.join('\n').trim();
+  };
+
+  // --- Extract Replay URLs for a specific matchup ---
+  const extractReplaysForMatchup = (content: string, matchup: string) => {
+    const lines = content.split('\n');
+    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean}> = [];
+    
+    // Look for replay examples section first
+    let inReplaySection = false;
+    let inMatchupSpecificReplay = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Check if we're in the "## Replay Examples" section
+      if (/^##\s*Replay\s*Examples/i.test(line)) {
+        inReplaySection = true;
+        continue;
+      }
+      
+      // Exit replay section if we hit another major section
+      if (inReplaySection && /^##\s/.test(line) && !/^##\s*Replay\s*Examples/i.test(line)) {
+        break;
+      }
+      
+      // Check if this replay section is for our specific matchup
+      if (inReplaySection && (line.startsWith('### vs ') || line.startsWith('## vs '))) {
+        const replayMatchupName = line.replace(/^#+\s*vs\s*/i, '').trim();
+        inMatchupSpecificReplay = replayMatchupName.toLowerCase().includes(matchup.toLowerCase()) ||
+                                  matchup.toLowerCase().includes(replayMatchupName.toLowerCase());
+        continue;
+      }
+      
+      // Extract replay URLs
+      if ((inReplaySection && inMatchupSpecificReplay) || 
+          (inReplaySection && matchup === '' && line.includes('**Replay:**'))) {
+        
+        const replayMatch = line.match(/\*\*Replay:\*\*\s*(.+)/i);
+        if (replayMatch) {
+          const url = replayMatch[1].trim();
+          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                               !url.includes('replay.pokemonshowdown.com');
+          
+          // Look for notes on the next line
+          let notes = '';
+          if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            if (nextLine.startsWith('**Notes:**')) {
+              notes = nextLine.replace('**Notes:**', '').trim();
+            }
+          }
+          
+          replays.push({
+            url,
+            notes: notes || undefined,
+            isPlaceholder
+          });
+        }
+      }
+    }
+    
+    // If we didn't find matchup-specific replays, look for any replay URLs in the entire content
+    if (replays.length === 0) {
+      const allReplayMatches = content.match(/https:\/\/replay\.pokemonshowdown\.com\/[^\s\n\r]*/g);
+      if (allReplayMatches) {
+        allReplayMatches.forEach(url => {
+          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]');
+          replays.push({
+            url,
+            isPlaceholder
+          });
+        });
+      }
+    }
+    
+    return replays;
   };
 
   // Filter matchups based on search term
@@ -1942,16 +2048,6 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
               {matchups[selectedMatchup].opponentTeam && matchups[selectedMatchup].opponentTeam!.length > 0 && (
                 <div className="opponent-team-section">
                   <strong>👥 Rival's Team:</strong>
-                  {matchups[selectedMatchup].pokepasteUrl && (
-                    <a 
-                      href={matchups[selectedMatchup].pokepasteUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="pokepaste-link"
-                    >
-                      📋 View Pokepaste
-                    </a>
-                  )}
                   <div className="opponent-team-display">
                     {(() => {
                       try {
@@ -1996,6 +2092,164 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                         return <div>Error loading opponent team</div>;
                       }
                     })()}
+                  </div>
+                  
+                  {matchups[selectedMatchup].pokepasteUrl && (
+                    <a 
+                      href={matchups[selectedMatchup].pokepasteUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="pokepaste-link"
+                      style={{ marginTop: 12, display: 'inline-block' }}
+                    >
+                      📋 View Pokepaste
+                    </a>
+                  )}
+
+                  {/* Intelligent Replay Section */}
+                  <div style={{ marginTop: 16 }}>
+                    <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 12 }}>
+                      🎮 Replays
+                    </h5>
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                      borderRadius: 8,
+                      padding: 16
+                    }}>
+                      {(() => {
+                        const replays = extractReplaysForMatchup(gameplan.content, selectedMatchup);
+                        
+                        if (replays.length === 0) {
+                          return (
+                            <>
+                              <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 12 }}>
+                                No replays found for this matchup yet
+                              </p>
+                              <a
+                                href="https://replay.pokemonshowdown.com/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  color: '#60a5fa',
+                                  textDecoration: 'none',
+                                  fontSize: 14,
+                                  fontWeight: 500,
+                                  padding: '8px 16px',
+                                  background: 'rgba(96, 165, 250, 0.1)',
+                                  border: '1px solid rgba(96, 165, 250, 0.3)',
+                                  borderRadius: 6,
+                                  transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.2)';
+                                  e.currentTarget.style.borderColor = '#60a5fa';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)';
+                                  e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.3)';
+                                }}
+                              >
+                                🔗 Browse Replays on Showdown
+                              </a>
+                            </>
+                          );
+                        }
+                        
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            {replays.map((replay, index) => {
+                              if (replay.isPlaceholder) {
+                                return (
+                                  <div key={index} style={{
+                                    padding: 12,
+                                    background: 'rgba(251, 191, 36, 0.1)',
+                                    border: '1px solid rgba(251, 191, 36, 0.3)',
+                                    borderRadius: 6,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 6
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <span style={{ color: '#f59e0b', fontSize: 14 }}>⚠️</span>
+                                      <span style={{ color: '#f59e0b', fontSize: 14, fontWeight: 500 }}>
+                                        Placeholder Replay #{index + 1}
+                                      </span>
+                                    </div>
+                                    <p style={{ color: '#92400e', fontSize: 13, margin: 0 }}>
+                                      This is a template replay URL. Replace with actual Pokemon Showdown replay link.
+                                    </p>
+                                    {replay.notes && (
+                                      <p style={{ color: '#78716c', fontSize: 13, margin: 0, fontStyle: 'italic' }}>
+                                        {replay.notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              
+                              return (
+                                <div key={index} style={{
+                                  padding: 12,
+                                  background: 'rgba(16, 185, 129, 0.1)',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                                  borderRadius: 6,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 6
+                                }}>
+                                  <a
+                                    href={replay.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      color: '#10b981',
+                                      textDecoration: 'none',
+                                      fontSize: 14,
+                                      fontWeight: 500,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 6
+                                    }}
+                                  >
+                                    <span>🎥</span>
+                                    <span>Replay #{index + 1}</span>
+                                    <span style={{ color: '#6b7280', fontSize: 12 }}>↗</span>
+                                  </a>
+                                  {replay.notes && (
+                                    <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
+                                      {replay.notes}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            <a
+                              href="https://replay.pokemonshowdown.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                alignSelf: 'flex-start',
+                                color: '#60a5fa',
+                                textDecoration: 'none',
+                                fontSize: 13,
+                                fontWeight: 500,
+                                padding: '6px 12px',
+                                background: 'rgba(96, 165, 250, 0.1)',
+                                border: '1px solid rgba(96, 165, 250, 0.3)',
+                                borderRadius: 4,
+                                marginTop: 4
+                              }}
+                            >
+                              + Add More Replays
+                            </a>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2143,84 +2397,56 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                       allPokemonInMatchup.push(...extractPokemonFromText(matchupData.back));
                     }
                     
-                    // Extract from gameplans
-                    if (matchupData.conditionalGameplans) {
-                      matchupData.conditionalGameplans.forEach(gp => {
-                        if (gp.myLead) allPokemonInMatchup.push(...extractPokemonFromText(gp.myLead));
-                        if (gp.myBack) allPokemonInMatchup.push(...extractPokemonFromText(gp.myBack));
-                      });
+                    // Add opponent team Pokemon
+                    if (matchupData.opponentTeam) {
+                      allPokemonInMatchup.push(...matchupData.opponentTeam.map(p => p.pokemon));
                     }
                   }
                   
-                  // Also extract from the team composition section to ensure we get all Pokemon
-                  const teamPokemon = extractPokemonFromContent(gameplan);
-                  allPokemonInMatchup.push(...teamPokemon);
-                  
-                  // Remove duplicates
                   const uniquePokemon = Array.from(new Set(allPokemonInMatchup));
+                  const calcsByPokemon: { [key: string]: { [key: string]: string } } = {};
                   
                   // Group calculations by Pokemon
-                  const calcsByPokemon: { [pokemon: string]: { [calcName: string]: string } } = {};
-                  
-                  Object.entries(damageCalcs).forEach(([calcName, calcDetails]) => {
-                    // Find which Pokemon this calculation is for
-                    const pokemonMatch = uniquePokemon.find(pokemon => 
-                      calcName.toLowerCase().includes(pokemon.toLowerCase())
-                    );
-                    
-                    if (pokemonMatch) {
-                      if (!calcsByPokemon[pokemonMatch]) {
-                        calcsByPokemon[pokemonMatch] = {};
-                      }
-                      calcsByPokemon[pokemonMatch][calcName] = calcDetails;
-                    } else {
-                      // If no direct match, try to find Pokemon mentioned in the calculation details
-                      const mentionedPokemon = uniquePokemon.find(pokemon => 
-                        calcDetails.toLowerCase().includes(pokemon.toLowerCase())
-                      );
-                      
-                      if (mentionedPokemon) {
-                        if (!calcsByPokemon[mentionedPokemon]) {
-                          calcsByPokemon[mentionedPokemon] = {};
+                  Object.entries(damageCalcs).forEach(([calcName, calcContent]) => {
+                    for (const pokemon of uniquePokemon) {
+                      if (calcName.toLowerCase().includes(pokemon.toLowerCase()) || 
+                          calcContent.toLowerCase().includes(pokemon.toLowerCase())) {
+                        if (!calcsByPokemon[pokemon]) {
+                          calcsByPokemon[pokemon] = {};
                         }
-                        calcsByPokemon[mentionedPokemon][calcName] = calcDetails;
+                        calcsByPokemon[pokemon][calcName] = calcContent;
                       }
                     }
                   });
                   
                   return (
                     <div className="damage-calculations-section">
-                      <h5 style={{ marginBottom: 16, color: '#fbbf24', fontWeight: 700, fontSize: 20 }}>
-                        ⚡ Damage Calculations
-                      </h5>
-                      
-                      {/* Pokemon Sprites Section */}
-                      <div style={{ marginBottom: 20 }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                      <h5 style={{ marginBottom: 16, color: '#fbbf24', fontWeight: 700, fontSize: 20 }}>⚔️ Damage Calculations</h5>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', 
+                          gap: 12,
+                          marginBottom: 16
+                        }}>
                           {uniquePokemon.map(pokemon => (
                             <div
                               key={pokemon}
-                              onClick={() => {
-                                const pokemonCalcs = calcsByPokemon[pokemon];
-                                if (pokemonCalcs && Object.keys(pokemonCalcs).length > 0) {
-                                  // Toggle selection - if same Pokemon clicked, deselect
-                                  setSelectedPokemonForCalcs(selectedPokemonForCalcs === pokemon ? '' : pokemon);
-                                }
-                              }}
                               style={{
-                                cursor: 'pointer',
-                                padding: 8,
-                                borderRadius: 8,
-                                border: selectedPokemonForCalcs === pokemon ? '2px solid #fbbf24' : '2px solid #333',
-                                background: selectedPokemonForCalcs === pokemon ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.05)',
-                                transition: 'all 0.2s ease',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                gap: 4,
-                                width: 120,
-                                height: 120
+                                gap: 8,
+                                padding: 12,
+                                background: selectedPokemonForCalcs === pokemon ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.05)',
+                                border: `2px solid ${selectedPokemonForCalcs === pokemon ? '#fbbf24' : '#333'}`,
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                minHeight: 100,
+                                justifyContent: 'center'
                               }}
+                              onClick={() => setSelectedPokemonForCalcs(selectedPokemonForCalcs === pokemon ? '' : pokemon)}
                               onMouseEnter={(e) => {
                                 if (selectedPokemonForCalcs !== pokemon) {
                                   e.currentTarget.style.border = '2px solid #fbbf24';
@@ -2259,61 +2485,44 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                             </div>
                           ))}
                         </div>
-                      </div>
-                      
-                      {/* Selected Pokemon Damage Calculations */}
-                      {selectedPokemonForCalcs && calcsByPokemon[selectedPokemonForCalcs] && (
-                        <div style={{ marginTop: 20 }}>
-                          <div style={{ 
-                            fontWeight: 600, 
-                            color: '#fbbf24', 
-                            marginBottom: 12, 
-                            fontSize: 18,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8
+                        
+                        {selectedPokemonForCalcs && calcsByPokemon[selectedPokemonForCalcs] && (
+                          <div style={{
+                            background: 'rgba(251, 191, 36, 0.1)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            borderRadius: 8,
+                            padding: 16
                           }}>
-                            <PokemonSprite pokemon={selectedPokemonForCalcs} size={32} />
-                            Damage Calculations for {selectedPokemonForCalcs}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            {Object.entries(calcsByPokemon[selectedPokemonForCalcs]).map(([calcName, calcDetails]) => (
-                              <div
-                                key={calcName}
-                                className="damage-calc-card"
-                                style={{
-                                  background: 'rgba(255,255,255,0.04)',
-                                  borderRadius: 12,
-                                  padding: 16,
-                                  boxShadow: '0 2px 8px 0 rgba(0,0,0,0.10)',
-                                  border: '1px solid #333',
-                                  color: '#e0e0e0',
-                                }}
-                              >
-                                <div style={{ fontWeight: 600, color: '#fbbf24', marginBottom: 8, fontSize: 16 }}>
-                                  {calcName}
-                                </div>
-                                <pre style={{ 
-                                  whiteSpace: 'pre-wrap', 
-                                  fontFamily: 'inherit', 
-                                  fontSize: 14,
-                                  margin: 0,
-                                  color: '#a1a1aa'
+                            <h6 style={{ color: '#fbbf24', marginBottom: 12, fontSize: 16 }}>Calculations for {selectedPokemonForCalcs}</h6>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {Object.entries(calcsByPokemon[selectedPokemonForCalcs]).map(([calcName, calcContent]) => (
+                                <div key={calcName} style={{
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(251, 191, 36, 0.2)',
+                                  borderRadius: 6,
+                                  padding: 12
                                 }}>
-                                  {calcDetails}
-                                </pre>
-                              </div>
-                            ))}
+                                  <div style={{ color: '#fbbf24', fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{calcName}</div>
+                                  <pre style={{ 
+                                    color: '#e0e0e0', 
+                                    fontSize: 12, 
+                                    whiteSpace: 'pre-wrap', 
+                                    fontFamily: 'inherit',
+                                    margin: 0
+                                  }}>{calcContent}</pre>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      
-
+                        )}
+                      </div>
                     </div>
                   );
                 }
                 return null;
               })()}
+
+              
             </div>
           </div>
         </>
@@ -2383,10 +2592,7 @@ const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   const allPokemon = extractPokemonFromContent(gameplan);
   const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
   
-  console.log('CheatSheet Debug:');
-  console.log('- allPokemon:', allPokemon);
-  console.log('- teamWithItems:', teamWithItems);
-  console.log('- teamWithItems.length:', teamWithItems?.length);
+
 
   return (
     <div className="cheat-sheet">
@@ -2883,6 +3089,7 @@ Impish Nature
     alert(`Exported ${gameplans.length} gameplan(s) as markdown files!`);
   }, [gameplans]);
 
+  // Process a single file (existing logic)
   const processImportFile = useCallback(async (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -3049,15 +3256,205 @@ Impish Nature
     reader.readAsText(file);
   }, [gameplans]);
 
-  const handleImportFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    processImportFile(file);
+  // NEW: Process multiple files for bulk import
+  const processBulkImport = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const validFiles = fileArray.filter(file => 
+      file.name.endsWith('.json') || file.name.endsWith('.md')
+    );
     
-    // Reset the input so the same file can be imported again
-    event.target.value = '';
+    if (validFiles.length === 0) {
+      alert('No valid files found. Please select JSON or Markdown files.');
+      return;
+    }
+    
+    if (validFiles.length === 1) {
+      // Single file - use existing logic
+      await processImportFile(validFiles[0]);
+      return;
+    }
+    
+    // Multiple files - show confirmation
+    const shouldProceed = window.confirm(
+      `Found ${validFiles.length} files to import. This will add all gameplans to your existing collection. Continue?`
+    );
+    
+    if (!shouldProceed) return;
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+    const newGameplans: Gameplan[] = [];
+    
+    // Process files sequentially to avoid overwhelming the user
+    for (const file of validFiles) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const fileContent = e.target?.result as string;
+              
+              if (file.name.endsWith('.json')) {
+                // Process JSON file
+                const importedData = JSON.parse(fileContent);
+                
+                if (Array.isArray(importedData)) {
+                  const validGameplans = importedData.filter(item => 
+                    item.id && item.title && item.content && item.dateCreated && item.tags
+                  );
+                  
+                  if (validGameplans.length > 0) {
+                    // Collect gameplans instead of updating state immediately
+                    validGameplans.forEach(gameplan => {
+                      const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
+                      const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+                      
+                      const newGameplan: Gameplan = {
+                        ...gameplan,
+                        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                        teamPokemon: gameplan.teamPokemon || teamPokemon,
+                        originalFile: {
+                          name: file.name,
+                          type: 'json' as const,
+                          lastModified: file.lastModified
+                        }
+                      };
+                      newGameplans.push(newGameplan);
+                    });
+                    successCount += validGameplans.length;
+                  } else {
+                    errors.push(`${file.name}: No valid gameplans found`);
+                    errorCount++;
+                  }
+                } else {
+                  errors.push(`${file.name}: Invalid JSON format`);
+                  errorCount++;
+                }
+              } else if (file.name.endsWith('.md')) {
+                // Process Markdown file
+                const lines = fileContent.split('\n');
+                let frontmatterEnd = -1;
+                let frontmatterStart = -1;
+                
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].trim() === '---') {
+                    if (frontmatterStart === -1) {
+                      frontmatterStart = i;
+                    } else {
+                      frontmatterEnd = i;
+                      break;
+                    }
+                  }
+                }
+                
+                if (frontmatterStart !== -1 && frontmatterEnd !== -1) {
+                  const frontmatter = lines.slice(frontmatterStart + 1, frontmatterEnd).join('\n');
+                  const content = lines.slice(frontmatterEnd + 1).join('\n');
+                  
+                  const metadata: any = {};
+                  frontmatter.split('\n').forEach(line => {
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex !== -1) {
+                      const key = line.substring(0, colonIndex).trim();
+                      let value: any = line.substring(colonIndex + 1).trim();
+                      
+                      if ((value.startsWith('"') && value.endsWith('"')) || 
+                          (value.startsWith("'") && value.endsWith("'"))) {
+                        value = value.slice(1, -1);
+                      }
+                      
+                      if (value.startsWith('[') && value.endsWith(']')) {
+                        try {
+                          value = JSON.parse(value);
+                        } catch {
+                          value = value.slice(1, -1).split(',').map((s: string) => s.trim().replace(/"/g, ''));
+                        }
+                      }
+                      
+                      metadata[key] = value;
+                    }
+                  });
+                  
+                  const teamWithItems = extractTeamPokemonWithItems(content);
+                  const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+                  
+                  const gameplan: Gameplan = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    title: metadata.title || file.name.replace('.md', ''),
+                    content: content.trim(),
+                    dateCreated: metadata.dateCreated || new Date().toISOString().split('T')[0],
+                    tags: Array.isArray(metadata.tags) ? metadata.tags : (metadata.tags ? [metadata.tags] : []),
+                    season: metadata.season || '',
+                    tournament: metadata.tournament || '',
+                    format: metadata.format || 'VGC',
+                    teamPokemon: teamPokemon,
+                    rivalTeams: metadata.rivalTeams || {},
+                    analysis: metadata.analysis || {},
+                    originalFile: {
+                      name: file.name,
+                      type: 'markdown' as const,
+                      lastModified: file.lastModified
+                    }
+                  };
+                  
+                  newGameplans.push(gameplan);
+                  successCount++;
+                } else {
+                  errors.push(`${file.name}: Invalid markdown format (missing YAML frontmatter)`);
+                  errorCount++;
+                }
+              }
+              resolve();
+            } catch (error) {
+              errors.push(`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              errorCount++;
+              reject(error);
+            }
+          };
+          reader.onerror = () => {
+            errors.push(`${file.name}: Failed to read file`);
+            errorCount++;
+            reject(new Error('File read error'));
+          };
+          reader.readAsText(file);
+        });
+      } catch (error) {
+        // Error already handled above
+      }
+    }
+    
+    // Update state once with all new gameplans
+    if (newGameplans.length > 0) {
+      setGameplans(prevGameplans => [...prevGameplans, ...newGameplans]);
+    }
+    
+    // Show results
+    let message = `Bulk import completed!\n\nSuccessfully imported: ${successCount} gameplan(s)`;
+    if (errorCount > 0) {
+      message += `\nFailed to import: ${errorCount} file(s)`;
+      message += `\n\nErrors:\n${errors.slice(0, 5).join('\n')}`;
+      if (errors.length > 5) {
+        message += `\n... and ${errors.length - 5} more errors`;
+      }
+    }
+    
+    alert(message);
   }, [processImportFile]);
+
+  const handleImportFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    if (files.length === 1) {
+      processImportFile(files[0]);
+    } else {
+      processBulkImport(files);
+    }
+    
+    // Reset the input so the same files can be imported again
+    event.target.value = '';
+  }, [processImportFile, processBulkImport]);
 
   const exportToPDF = useCallback(async (gameplan: Gameplan) => {
     try {
@@ -3488,14 +3885,23 @@ Impish Nature
                           className="btn-icon edit"
                           title="Edit"
                         >
-                          ✏️
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
                         </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); deleteGameplan(gameplan.id); }}
                           className="btn-icon delete"
                           title="Delete"
                         >
-                          🗑️
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18"/>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            <line x1="10" x2="10" y1="11" y2="17"/>
+                            <line x1="14" x2="14" y1="11" y2="17"/>
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -3504,8 +3910,7 @@ Impish Nature
                       <div className="pokemon-row">
                         {pokemonList.slice(0, 6).map((pokemon, index) => (
                           <div key={`${pokemon}-${index}`} className="pokemon-mini">
-                            <PokemonSprite pokemon={pokemon} size={32} />
-                            <span className="pokemon-mini-name">{pokemon.length > 8 ? pokemon.substring(0, 8) + '...' : pokemon}</span>
+                            <PokemonSprite pokemon={pokemon} size={58} />
                           </div>
                         ))}
                         {pokemonList.length > 6 && (
@@ -3752,6 +4157,7 @@ Impish Nature
         isOpen={isCloudImportModalOpen}
         onClose={() => setIsCloudImportModalOpen(false)}
         onImport={processImportFile}
+        onBulkImport={processBulkImport}
       />
 
       {/* Hidden Import Input */}
@@ -3759,6 +4165,7 @@ Impish Nature
         type="file"
         id="import-input"
         accept=".json,.md"
+        multiple
         onChange={handleImportFile}
         style={{ display: 'none' }}
       />

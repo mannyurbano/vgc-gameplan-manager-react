@@ -2557,15 +2557,50 @@ function App() {
 
 
   const exportData = useCallback(() => {
-    const dataStr = JSON.stringify(gameplans, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    // Export all gameplans as individual markdown files
+    gameplans.forEach((gameplan, index) => {
+      // Create YAML frontmatter
+      const frontmatter = {
+        title: gameplan.title,
+        tags: gameplan.tags,
+        season: gameplan.season || '',
+        tournament: gameplan.tournament || '',
+        format: gameplan.format || 'VGC',
+        author: 'VGC Gameplan Manager',
+        dateCreated: gameplan.dateCreated,
+        teamArchetype: gameplan.teamPokemon?.length ? `${gameplan.teamPokemon.length} Pokemon Team` : 'Custom Team',
+        coreStrategy: 'VGC Strategy',
+        teamPokemon: gameplan.teamPokemon || []
+      };
+
+      const yamlString = Object.entries(frontmatter)
+        .filter(([_, value]) => value !== undefined && value !== '')
+        .map(([key, value]) => {
+          if (Array.isArray(value)) {
+            return `${key}: [${value.map(v => `"${v}"`).join(', ')}]`;
+          }
+          return `${key}: "${value}"`;
+        })
+        .join('\n');
+
+      const markdownContent = `---\n${yamlString}\n---\n\n${gameplan.content}`;
+      
+      // Create safe filename
+      const safeTitle = gameplan.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const filename = `${safeTitle}_${gameplan.dateCreated}.md`;
+      
+      const blob = new Blob([markdownContent], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', url);
+      linkElement.setAttribute('download', filename);
+      linkElement.click();
+      
+      URL.revokeObjectURL(url);
+    });
     
-    const exportFileDefaultName = 'vgc-gameplans-export.json';
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+    alert(`Exported ${gameplans.length} gameplan(s) as markdown files!`);
   }, [gameplans]);
 
   const processImportFile = useCallback(async (file: File) => {

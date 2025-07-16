@@ -837,11 +837,18 @@ const extractPokemonFromContent = (gameplan: Gameplan): string[] => {
       return gameplan.teamPokemon.slice(0, 6); // Ensure exactly 6 Pokemon max
     }
     
-    // Fallback: extract from content (legacy format)
+    // Fallback: extract from content using the same logic as extractTeamPokemonWithItems
     if (!gameplan || !gameplan.content) {
       return [];
     }
     
+    // Use the same parsing logic as extractTeamPokemonWithItems for consistency
+    const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
+    if (teamWithItems && teamWithItems.length > 0) {
+      return teamWithItems.map(teamMember => teamMember.pokemon).slice(0, 6);
+    }
+    
+    // Final fallback: legacy regex matching (for backward compatibility)
     const pokemonNames = Object.keys(POKEMON_ID_MAP);
     const found: string[] = [];
     
@@ -2453,6 +2460,10 @@ function App() {
 
     const tags = formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
     
+    // Extract team Pokemon from the content for both new and updated gameplans
+    const teamWithItems = extractTeamPokemonWithItems(formData.content);
+    const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+    
     if (isEditing && selectedGameplan) {
       const updatedGameplans = gameplans.map(gp =>
         gp.id === selectedGameplan.id
@@ -2463,7 +2474,8 @@ function App() {
               tags,
               season: formData.season,
               tournament: formData.tournament,
-              format: formData.format
+              format: formData.format,
+              teamPokemon: teamPokemon // Update the teamPokemon field
             }
           : gp
       );
@@ -2477,7 +2489,8 @@ function App() {
         dateCreated: new Date().toISOString().split('T')[0],
         season: formData.season,
         tournament: formData.tournament,
-        format: formData.format
+        format: formData.format,
+        teamPokemon: teamPokemon // Set the teamPokemon field for new gameplans
       };
       setGameplans([newGameplan, ...gameplans]);
     }
@@ -2582,9 +2595,14 @@ function App() {
                 // Merge: Add imported gameplans with new IDs to avoid conflicts
                 const mergedGameplans = [...gameplans];
                 validGameplans.forEach(gameplan => {
+                  // Extract teamPokemon from content if not already present
+                  const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
+                  const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+                  
                   const newGameplan = {
                     ...gameplan,
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    teamPokemon: gameplan.teamPokemon || teamPokemon, // Use existing or extract from content
                     originalFile: {
                       name: file.name,
                       type: 'json' as const,
@@ -2596,14 +2614,21 @@ function App() {
                 setGameplans(mergedGameplans);
               } else {
                 // Replace all data
-                const gameplansWithFileInfo = validGameplans.map(gameplan => ({
-                  ...gameplan,
-                  originalFile: {
-                    name: file.name,
-                    type: 'json' as const,
-                    lastModified: file.lastModified
-                  }
-                }));
+                const gameplansWithFileInfo = validGameplans.map(gameplan => {
+                  // Extract teamPokemon from content if not already present
+                  const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
+                  const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+                  
+                  return {
+                    ...gameplan,
+                    teamPokemon: gameplan.teamPokemon || teamPokemon, // Use existing or extract from content
+                    originalFile: {
+                      name: file.name,
+                      type: 'json' as const,
+                      lastModified: file.lastModified
+                    }
+                  };
+                });
                 setGameplans(gameplansWithFileInfo);
               }
               
@@ -2666,6 +2691,10 @@ function App() {
              });
             
                          // Create gameplan object
+                         // Extract teamPokemon from content if not in frontmatter
+                         const teamWithItems = extractTeamPokemonWithItems(content);
+                         const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
+                         
              const gameplan: Gameplan = {
                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                title: metadata.title || file.name.replace('.md', ''),
@@ -2675,7 +2704,7 @@ function App() {
                season: metadata.season || '',
                tournament: metadata.tournament || '',
                format: metadata.format || 'VGC',
-               teamPokemon: Array.isArray(metadata.teamPokemon) ? metadata.teamPokemon : [],
+               teamPokemon: Array.isArray(metadata.teamPokemon) ? metadata.teamPokemon : teamPokemon,
                rivalTeams: metadata.rivalTeams || {},
                analysis: metadata.analysis || {},
                originalFile: {

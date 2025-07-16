@@ -566,10 +566,250 @@ const testPokemonItemParsing = () => {
   console.log('Parsed team with items:', result);
 };
 
-// Extract held items from team composition content
+// New function to parse pokepaste format
+const parsePokepasteFormat = (content: string): Array<{pokemon: string, item: string | null, details?: any}> => {
+  const teamData: Array<{pokemon: string, item: string | null, details?: any}> = [];
+  const lines = content.split('\n');
+  
+  let currentPokemon: any = null;
+  
+  for (let i = 0; i < lines.length && teamData.length < 6; i++) {
+    const line = lines[i].trim();
+    
+    // Skip empty lines
+    if (!line) {
+      continue;
+    }
+    
+    // Look for Pokemon @ Item format (start of new Pokemon)
+    // Pokemon names can have letters, numbers, spaces, and hyphens: "Flutter Mane", "Calyrex-Shadow", "Ho-Oh"
+    const pokemonMatch = line.match(/^([A-Za-z][A-Za-z0-9]*(?:[-\s][A-Za-z][A-Za-z0-9]*)*)\s*@\s*(.+)$/);
+    if (pokemonMatch) {
+      // Save previous Pokemon if exists
+      if (currentPokemon) {
+        teamData.push(currentPokemon);
+      }
+      
+      // Start new Pokemon
+      const pokemonName = pokemonMatch[1].trim();
+      const itemName = pokemonMatch[2].trim();
+      
+      // Validate Pokemon name exists in our mapping
+      let finalPokemonName = pokemonName;
+      if (!POKEMON_ID_MAP[pokemonName]) {
+        const found = Object.keys(POKEMON_ID_MAP).find(p => 
+          p.toLowerCase() === pokemonName.toLowerCase());
+        if (found) {
+          finalPokemonName = found;
+        }
+      }
+      
+      currentPokemon = {
+        pokemon: finalPokemonName,
+        item: itemName,
+        details: {
+          ability: '',
+          level: '',
+          shiny: false,
+          teraType: '',
+          evs: '',
+          nature: '',
+          ivs: '',
+          moves: []
+        }
+      };
+      continue;
+    }
+    
+    // If we have a current Pokemon, parse its details
+    if (currentPokemon) {
+      // Parse Ability
+      if (line.startsWith('Ability:')) {
+        currentPokemon.details.ability = line.replace('Ability:', '').trim();
+      }
+      // Parse Level
+      else if (line.startsWith('Level:')) {
+        currentPokemon.details.level = line.replace('Level:', '').trim();
+      }
+      // Parse Shiny
+      else if (line.startsWith('Shiny:')) {
+        currentPokemon.details.shiny = line.replace('Shiny:', '').trim().toLowerCase() === 'yes';
+      }
+      // Parse Tera Type
+      else if (line.startsWith('Tera Type:')) {
+        currentPokemon.details.teraType = line.replace('Tera Type:', '').trim();
+      }
+      // Parse EVs
+      else if (line.startsWith('EVs:')) {
+        currentPokemon.details.evs = line.replace('EVs:', '').trim();
+      }
+      // Parse Nature
+      else if (line.endsWith(' Nature') || line.includes(' Nature')) {
+        currentPokemon.details.nature = line.replace(' Nature', '').trim();
+      }
+      // Parse IVs
+      else if (line.startsWith('IVs:')) {
+        currentPokemon.details.ivs = line.replace('IVs:', '').trim();
+      }
+      // Parse Moves (lines starting with -)
+      else if (line.startsWith('-')) {
+        const move = line.replace(/^-\s*/, '').trim();
+        if (move) {
+          currentPokemon.details.moves.push(move);
+        }
+      }
+    }
+  }
+  
+  // Add the last Pokemon if exists
+  if (currentPokemon) {
+    teamData.push(currentPokemon);
+  }
+  
+  return teamData;
+};
+
+// Convert pokepaste format to app's markdown format
+const convertPokepasteToMarkdown = (pokepasteContent: string): string => {
+  try {
+    const pokepasteData = parsePokepasteFormat(pokepasteContent);
+    
+    if (pokepasteData.length === 0) {
+      return pokepasteContent; // Return original if no pokepaste detected
+    }
+    
+    let markdownContent = '## Team Composition (6 Pokemon)\n\n';
+    
+    pokepasteData.forEach((pokemon, index) => {
+      markdownContent += `**${pokemon.pokemon}** @ ${pokemon.item || 'No Item'}\n`;
+      
+      if (pokemon.details) {
+        const parts = [];
+        if (pokemon.details.ability) parts.push(`Ability: ${pokemon.details.ability}`);
+        if (pokemon.details.teraType) parts.push(`Tera: ${pokemon.details.teraType}`);
+        
+        if (parts.length > 0) {
+          markdownContent += `${parts.join(' | ')}\n`;
+        }
+        
+        if (pokemon.details.evs && pokemon.details.nature) {
+          markdownContent += `EVs: ${pokemon.details.evs} | ${pokemon.details.nature}\n`;
+        } else if (pokemon.details.evs) {
+          markdownContent += `EVs: ${pokemon.details.evs}\n`;
+        } else if (pokemon.details.nature) {
+          markdownContent += `Nature: ${pokemon.details.nature}\n`;
+        }
+        
+        if (pokemon.details.moves && pokemon.details.moves.length > 0) {
+          pokemon.details.moves.forEach((move: string) => {
+            markdownContent += `- ${move}\n`;
+          });
+        }
+      }
+      
+      markdownContent += '\n';
+    });
+    
+    markdownContent += `\n## Gameplan\n\n[Add your strategy here]\n\n`;
+    markdownContent += `## Key Matchups\n\n### vs [Opponent]\n\n**Strategy:** [Your strategy]\n\n`;
+    
+    return markdownContent;
+  } catch (error) {
+    console.error('Error converting pokepaste to markdown:', error);
+    return pokepasteContent;
+  }
+};
+
+// Detect and auto-convert pokepaste content when pasted
+const handleContentPaste = (content: string): string => {
+  // Check if content looks like pokepaste format
+  const lines = content.split('\n');
+  let pokemonLineCount = 0;
+  let detailLineCount = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Check for pokepaste Pokemon @ Item lines (without markdown **)
+    if (line.match(/^[A-Za-z][A-Za-z0-9-]*(?:-[A-Za-z][A-Za-z0-9-]*)*\s*@\s*.+$/) && !line.startsWith('**')) {
+      pokemonLineCount++;
+      // Check next few lines for pokepaste format indicators
+      for (let j = i + 1; j < Math.min(i + 15, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        if (nextLine.startsWith('Ability:') || nextLine.startsWith('EVs:') || 
+            nextLine.startsWith('Tera Type:') || nextLine.endsWith(' Nature') ||
+            nextLine.startsWith('Level:') || nextLine.startsWith('IVs:') ||
+            nextLine.startsWith('Shiny:')) {
+          detailLineCount++;
+          break;
+        }
+      }
+    }
+  }
+  
+  // Consider it pokepaste format if we have at least 1 Pokemon line with details (more lenient for paste)
+  const hasPokepasteFormat = pokemonLineCount >= 1 && detailLineCount >= 1;
+  
+  if (hasPokepasteFormat) {
+    console.log('Pokepaste format detected, converting to markdown...');
+    return convertPokepasteToMarkdown(content);
+  }
+  
+  return content;
+};
+
+// Enhanced version that handles both markdown format and pokepaste format
 const extractTeamPokemonWithItems = (content: string): Array<{pokemon: string, item: string | null}> => {
   try {
+    // First try to detect if this is pokepaste format
     const lines = content.split('\n');
+    let hasPokepasteFormat = false;
+    let hasMarkdownFormat = false;
+    
+    // Look for pokepaste indicators: Pokemon @ Item without markdown formatting
+    // and presence of lines starting with "Ability:", "EVs:", etc.
+    let pokemonLineCount = 0;
+    let detailLineCount = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Check for pokepaste Pokemon @ Item lines (without markdown **)
+      if (line.match(/^[A-Za-z][A-Za-z0-9]*(?:[-\s][A-Za-z][A-Za-z0-9]*)*\s*@\s*.+$/) && !line.startsWith('**')) {
+        pokemonLineCount++;
+        // Check next few lines for pokepaste format indicators
+        for (let j = i + 1; j < Math.min(i + 15, lines.length); j++) {
+          const nextLine = lines[j].trim();
+          if (nextLine.startsWith('Ability:') || nextLine.startsWith('EVs:') || 
+              nextLine.startsWith('Tera Type:') || nextLine.endsWith(' Nature') ||
+              nextLine.startsWith('Level:') || nextLine.startsWith('IVs:') ||
+              nextLine.startsWith('Shiny:')) {
+            detailLineCount++;
+            break;
+          }
+        }
+      }
+      
+      // Check for markdown format
+      if (line.match(/^\*\*([^*]+)\*\*\s*@\s*([^\n\r]+)/)) {
+        hasMarkdownFormat = true;
+      }
+    }
+    
+    // Consider it pokepaste format if we have at least 2 Pokemon lines with details
+    hasPokepasteFormat = pokemonLineCount >= 2 && detailLineCount >= 2;
+    
+    // If we detect pokepaste format, use the new parser
+    if (hasPokepasteFormat && !hasMarkdownFormat) {
+      console.log('Detected pokepaste format, using pokepaste parser');
+      const pokepasteData = parsePokepasteFormat(content);
+      return pokepasteData.map(pokemon => ({
+        pokemon: pokemon.pokemon,
+        item: pokemon.item
+      }));
+    }
+    
+    // Original markdown parsing logic (keeping existing functionality intact)
     const teamData: Array<{pokemon: string, item: string | null}> = [];
     
     let inTeamSection = false;
@@ -829,15 +1069,10 @@ const loadGameplansFromAPI = async (): Promise<Gameplan[]> => {
   }
 };
 
-// Extract Pokemon names from gameplan (prioritize teamPokemon field)
+// Extract Pokemon names from gameplan content (auto-infer from team composition)
 const extractPokemonFromContent = (gameplan: Gameplan): string[] => {
   try {
-    // First try to get team from teamPokemon field (new standardized format)
-    if (gameplan && gameplan.teamPokemon && Array.isArray(gameplan.teamPokemon) && gameplan.teamPokemon.length > 0) {
-      return gameplan.teamPokemon.slice(0, 6); // Ensure exactly 6 Pokemon max
-    }
-    
-    // Fallback: extract from content using the same logic as extractTeamPokemonWithItems
+    // Always extract from content to ensure consistency and avoid redundancy
     if (!gameplan || !gameplan.content) {
       return [];
     }
@@ -2292,6 +2527,51 @@ function App() {
         console.log('No gameplan selected');
       }
     };
+    (window as any).testPokepasteConversion = () => {
+      const samplePokepaste = `Calyrex-Shadow @ Life Orb  
+Ability: As One (Spectrier)  
+Level: 99  
+Tera Type: Dark  
+EVs: 28 HP / 36 Def / 180 SpA / 12 SpD / 252 Spe  
+Timid Nature  
+IVs: 0 Atk  
+- Astral Barrage  
+- Psychic  
+- Nasty Plot  
+- Protect  
+
+Zamazenta @ Rusted Shield  
+Ability: Dauntless Shield  
+Level: 99  
+Shiny: Yes  
+Tera Type: Grass  
+EVs: 204 HP / 4 Atk / 180 Def / 28 SpD / 92 Spe  
+Impish Nature  
+- Body Press  
+- Heavy Slam  
+- Wide Guard  
+- Protect`;
+      
+      console.log('=== Testing Pokepaste Conversion ===');
+      console.log('Sample Pokepaste:', samplePokepaste);
+      
+      console.log('Testing direct parsing...');
+      const directParsed = parsePokepasteFormat(samplePokepaste);
+      console.log('Direct pokepaste parsing result:', directParsed);
+      
+      console.log('Testing detection and conversion...');
+      const converted = convertPokepasteToMarkdown(samplePokepaste);
+      console.log('Converted to Markdown:', converted);
+      
+      const parsed = extractTeamPokemonWithItems(converted);
+      console.log('Final parsed team data:', parsed);
+      
+      const pasteResult = handleContentPaste(samplePokepaste);
+      console.log('Paste handler result length:', pasteResult.length, 'characters');
+      console.log('Paste conversion successful:', pasteResult !== samplePokepaste);
+    };
+    
+
   }, [gameplans, selectedGameplan]);
   const [viewMode, setViewMode] = useState<'list' | 'detail' | 'edit'>('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -2559,7 +2839,7 @@ function App() {
   const exportData = useCallback(() => {
     // Export all gameplans as individual markdown files
     gameplans.forEach((gameplan, index) => {
-      // Create YAML frontmatter
+      // Create YAML frontmatter (teamPokemon auto-inferred from content, so not included)
       const frontmatter = {
         title: gameplan.title,
         tags: gameplan.tags,
@@ -2569,8 +2849,8 @@ function App() {
         author: 'VGC Gameplan Manager',
         dateCreated: gameplan.dateCreated,
         teamArchetype: gameplan.teamPokemon?.length ? `${gameplan.teamPokemon.length} Pokemon Team` : 'Custom Team',
-        coreStrategy: 'VGC Strategy',
-        teamPokemon: gameplan.teamPokemon || []
+        coreStrategy: 'VGC Strategy'
+        // teamPokemon removed - will be auto-inferred from team composition section
       };
 
       const yamlString = Object.entries(frontmatter)
@@ -2726,7 +3006,7 @@ function App() {
              });
             
                          // Create gameplan object
-                         // Extract teamPokemon from content if not in frontmatter
+                         // Auto-infer teamPokemon from content to avoid redundancy
                          const teamWithItems = extractTeamPokemonWithItems(content);
                          const teamPokemon = teamWithItems.map(teamMember => teamMember.pokemon);
                          
@@ -2739,7 +3019,7 @@ function App() {
                season: metadata.season || '',
                tournament: metadata.tournament || '',
                format: metadata.format || 'VGC',
-               teamPokemon: Array.isArray(metadata.teamPokemon) ? metadata.teamPokemon : teamPokemon,
+               teamPokemon: teamPokemon, // Always use auto-inferred Pokemon from content
                rivalTeams: metadata.rivalTeams || {},
                analysis: metadata.analysis || {},
                originalFile: {
@@ -3429,11 +3709,32 @@ function App() {
 
                 <div className="form-group">
                   <label htmlFor="content">Content:</label>
+                  <div style={{ marginBottom: '0.5rem', padding: '0.75rem', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '6px', border: '1px solid rgba(74, 222, 128, 0.3)' }}>
+                    <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600' }}>
+                      🍃 Pokepaste Support: Paste directly from pokepast.es and it will auto-convert to the app format!
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
+                      Supports all pokepaste fields: abilities, EVs, natures, tera types, moves, items, etc.
+                    </div>
+                  </div>
                   <textarea
                     id="content"
                     value={formData.content}
                     onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                    placeholder="Enter your gameplan content in markdown format..."
+                    onPaste={(e) => {
+                      // Get pasted content
+                      const pastedData = e.clipboardData.getData('text');
+                      if (pastedData) {
+                        // Check if it looks like pokepaste format and auto-convert
+                        const convertedContent = handleContentPaste(pastedData);
+                        if (convertedContent !== pastedData) {
+                          // If conversion happened, prevent default paste and set converted content
+                          e.preventDefault();
+                          setFormData(prev => ({ ...prev, content: prev.content + convertedContent }));
+                        }
+                      }
+                    }}
+                    placeholder="Enter your gameplan content in markdown format...&#10;&#10;💡 Tip: You can paste pokepaste format directly and it will be auto-converted!"
                     className="form-textarea"
                     rows={20}
                   />

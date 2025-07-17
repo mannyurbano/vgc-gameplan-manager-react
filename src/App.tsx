@@ -1717,8 +1717,10 @@ const DropdownPokemonSprites: React.FC<{
             if (matches) {
               matches.forEach(match => {
                 const pokemonName = match.replace(/@.*$/, '').trim();
-                if (pokemonName && POKEMON_ID_MAP[pokemonName] || 
-                    Object.keys(POKEMON_ID_MAP).some(p => p.toLowerCase() === pokemonName.toLowerCase())) {
+                if (
+                  (pokemonName && POKEMON_ID_MAP[pokemonName]) || 
+                  Object.keys(POKEMON_ID_MAP).some(p => p.toLowerCase() === pokemonName.toLowerCase())
+                ) {
                   const correctName = Object.keys(POKEMON_ID_MAP).find(p => 
                     p.toLowerCase() === pokemonName.toLowerCase()) || pokemonName;
                   allPokemon.push(correctName);
@@ -2688,9 +2690,6 @@ const MatchupSelector: React.FC<{
       pokemon.toLowerCase().includes(searchLower)
     );
   });
-
-  const safeOnReplayAdded = onReplayAdded || (() => {});
-  const safeOnReplayDeleted = onReplayDeleted || (() => {});
 
   return (
     <div className="matchup-selector">
@@ -3695,202 +3694,6 @@ const CheatSheet: React.FC<{
   );
 };
 
-// Pokepaste interfaces and utility functions
-interface PokemonData {
-  name: string;
-  item?: string;
-  ability?: string;
-  teraType?: string;
-  moves: string[];
-}
-
-interface OpponentTeamData {
-  pokemon: PokemonData[];
-  title?: string;
-  author?: string;
-}
-
-const fetchPokepasteData = async (url: string): Promise<OpponentTeamData | null> => {
-  try {
-    // Extract the ID from the Pokepaste URL
-    const urlMatch = url.match(/pokepast\.es\/([a-f0-9]+)/i);
-    if (!urlMatch) {
-      console.warn('Invalid pokepaste URL format:', url);
-      return null;
-    }
-    
-    const pokepasteId = urlMatch[1];
-    
-    // Check for example/placeholder URLs
-    const exampleIds = ['example-speed-team', 'example-miraidon-lunala', 'example-priority-team', 'example-koraidon-solgaleo', 'example-calyrex-ice'];
-    if (exampleIds.some(id => url.includes(id))) {
-      console.warn('This is an example pokepaste URL, not a real team:', url);
-      return null;
-    }
-    
-    // Validate that the ID looks like a real pokepaste ID (hexadecimal)
-    if (!/^[a-f0-9]{12,}$/i.test(pokepasteId)) {
-      console.warn('Pokepaste ID does not appear to be valid:', pokepasteId);
-      return null;
-    }
-    
-    // Try multiple endpoints in order of preference
-    const endpoints = [
-      `https://pokepast.es/${pokepasteId}/raw`, // Raw text endpoint (often has better CORS)
-      `https://pokepast.es/${pokepasteId}.txt`, // Alternative raw endpoint
-      `https://cors-anywhere.herokuapp.com/https://pokepast.es/${pokepasteId}`, // CORS proxy as fallback
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://pokepast.es/${pokepasteId}`)}` // Another CORS proxy
-    ];
-    
-    let text = '';
-    let response: Response | null = null;
-    
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`Trying to fetch pokepaste from: ${endpoint}`);
-        response = await fetch(endpoint);
-        
-        if (response.ok) {
-          if (endpoint.includes('allorigins.win')) {
-            // allorigins returns JSON with the content in .contents
-            const data = await response.json();
-            text = data.contents;
-          } else {
-            text = await response.text();
-          }
-          
-          // Check if we got valid pokepaste content
-          if (text && (text.includes('@') || text.includes('Ability:') || text.includes('EVs:'))) {
-            console.log(`Successfully fetched pokepaste data from: ${endpoint}`);
-            break;
-          }
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch from ${endpoint}:`, error);
-        continue;
-      }
-    }
-    
-    if (!text) {
-      console.error('All pokepaste fetch methods failed');
-      return null;
-    }
-    
-    // Parse the team data
-    const pokemon: PokemonData[] = [];
-    const lines = text.split('\n');
-    let currentPokemon: Partial<PokemonData> | null = null;
-    let title = '';
-    let author = '';
-    
-    // Check if this is HTML content or raw text
-    const isHtmlContent = text.includes('<html>') || text.includes('<title>');
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      if (isHtmlContent) {
-        // Extract title from HTML
-        if (trimmed.includes('<title>') && !title) {
-          const titleMatch = trimmed.match(/<title>(.+?)<\/title>/);
-          if (titleMatch) title = titleMatch[1].replace(' · Pokepaste', '');
-        }
-        
-        // Extract author from "by" line in HTML
-        if (trimmed.startsWith('##') && trimmed.includes('by ')) {
-          const authorMatch = trimmed.match(/by (.+)/);
-          if (authorMatch) author = authorMatch[1];
-        }
-        
-        // Skip HTML tags and only process actual content
-        if (trimmed.includes('<') && trimmed.includes('>')) {
-          continue;
-        }
-      } else {
-        // For raw text, extract title and author from the first few lines
-        if (!title && trimmed && !trimmed.includes('@') && !trimmed.startsWith('-') && 
-            !trimmed.startsWith('Ability:') && !trimmed.startsWith('EVs:') && 
-            !trimmed.startsWith('Level:') && !trimmed.startsWith('Tera Type:') &&
-            !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && lines.indexOf(line) < 5) {
-          // Potential title line
-          if (trimmed.length > 3 && !trimmed.match(/^[A-Z][a-z]+\s*@/)) {
-            title = trimmed;
-          }
-        }
-        
-        // Look for author in raw text (sometimes appears as "by [author]")
-        if (trimmed.toLowerCase().startsWith('by ') && !author) {
-          author = trimmed.substring(3).trim();
-        }
-      }
-      
-      // Skip empty lines and HTML content
-      if (!trimmed || (isHtmlContent && (trimmed.includes('<') || trimmed.includes('>')))) {
-        continue;
-      }
-      
-      // Pokemon name line (contains @ for item)
-      if (trimmed.includes(' @ ') || (trimmed && !trimmed.startsWith('-') && !trimmed.startsWith('Ability:') && !trimmed.startsWith('Tera Type:') && !trimmed.startsWith('EVs:') && !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && !trimmed.startsWith('#') && !trimmed.startsWith('Format:') && !trimmed.startsWith('by ') && !trimmed.startsWith('Level:') && currentPokemon === null)) {
-        // Save previous Pokemon if exists
-        if (currentPokemon && currentPokemon.name) {
-          pokemon.push({
-            name: currentPokemon.name,
-            item: currentPokemon.item,
-            ability: currentPokemon.ability,
-            teraType: currentPokemon.teraType,
-            moves: currentPokemon.moves || []
-          });
-        }
-        
-        // Parse new Pokemon
-        const parts = trimmed.split(' @ ');
-        const pokemonName = parts[0].replace(/\(.*?\)/g, '').trim(); // Remove gender/nickname in parentheses
-        const item = parts[1] || undefined;
-        
-        currentPokemon = {
-          name: pokemonName,
-          item,
-          moves: []
-        };
-      }
-      // Ability line
-      else if (trimmed.startsWith('Ability:') && currentPokemon) {
-        currentPokemon.ability = trimmed.replace('Ability:', '').trim();
-      }
-      // Tera Type line
-      else if (trimmed.startsWith('Tera Type:') && currentPokemon) {
-        currentPokemon.teraType = trimmed.replace('Tera Type:', '').trim();
-      }
-      // Move line
-      else if (trimmed.startsWith('- ') && currentPokemon) {
-        const move = trimmed.replace('- ', '').trim();
-        if (!currentPokemon.moves) currentPokemon.moves = [];
-        currentPokemon.moves.push(move);
-      }
-    }
-    
-    // Add the last Pokemon
-    if (currentPokemon && currentPokemon.name) {
-      pokemon.push({
-        name: currentPokemon.name,
-        item: currentPokemon.item,
-        ability: currentPokemon.ability,
-        teraType: currentPokemon.teraType,
-        moves: currentPokemon.moves || []
-      });
-    }
-    
-    return {
-      pokemon: pokemon.filter(p => p.name), // Only include Pokemon with names
-      title: title || undefined,
-      author: author || undefined
-    };
-  } catch (error) {
-    console.error('Error fetching Pokepaste data:', error);
-    return null;
-  }
-};
-
 // Gameplan List Item Component (with async Pokemon loading)
 const GameplanListItem: React.FC<{ 
   gameplan: Gameplan;
@@ -4359,6 +4162,143 @@ const PokepasteTeamDisplay: React.FC<{
   );
 };
 
+// Add back the OpponentTeamData interface and fetchPokepasteData function
+interface PokemonData {
+  name: string;
+  item?: string;
+  ability?: string;
+  teraType?: string;
+  moves: string[];
+}
+
+interface OpponentTeamData {
+  pokemon: PokemonData[];
+  title?: string;
+  author?: string;
+}
+
+const fetchPokepasteData = async (url: string): Promise<OpponentTeamData | null> => {
+  try {
+    // Extract the ID from the Pokepaste URL
+    const urlMatch = url.match(/pokepast\.es\/([a-f0-9]+)/i);
+    if (!urlMatch) {
+      console.warn('Invalid pokepaste URL format:', url);
+      return null;
+    }
+    const pokepasteId = urlMatch[1];
+    // Try multiple endpoints in order of preference
+    const endpoints = [
+      `https://pokepast.es/${pokepasteId}/raw`,
+      `https://pokepast.es/${pokepasteId}.txt`,
+      `https://cors-anywhere.herokuapp.com/https://pokepast.es/${pokepasteId}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://pokepast.es/${pokepasteId}`)}`
+    ];
+    let text = '';
+    let response: Response | null = null;
+    for (const endpoint of endpoints) {
+      try {
+        response = await fetch(endpoint);
+        if (response.ok) {
+          if (endpoint.includes('allorigins.win')) {
+            const data = await response.json();
+            text = data.contents;
+          } else {
+            text = await response.text();
+          }
+          if (text && (text.includes('@') || text.includes('Ability:') || text.includes('EVs:'))) {
+            break;
+          }
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    if (!text) {
+      return null;
+    }
+    const pokemon: PokemonData[] = [];
+    const lines = text.split('\n');
+    let currentPokemon: Partial<PokemonData> | null = null;
+    let title = '';
+    let author = '';
+    const isHtmlContent = text.includes('<html>') || text.includes('<title>');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (isHtmlContent) {
+        if (trimmed.includes('<title>') && !title) {
+          const titleMatch = trimmed.match(/<title>(.+?)<\/title>/);
+          if (titleMatch) title = titleMatch[1].replace(' · Pokepaste', '');
+        }
+        if (trimmed.startsWith('##') && trimmed.includes('by ')) {
+          const authorMatch = trimmed.match(/by (.+)/);
+          if (authorMatch) author = authorMatch[1];
+        }
+        if (trimmed.includes('<') && trimmed.includes('>')) {
+          continue;
+        }
+      } else {
+        if (!title && trimmed && !trimmed.includes('@') && !trimmed.startsWith('-') && 
+            !trimmed.startsWith('Ability:') && !trimmed.startsWith('EVs:') && 
+            !trimmed.startsWith('Level:') && !trimmed.startsWith('Tera Type:') &&
+            !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && lines.indexOf(line) < 5) {
+          if (trimmed.length > 3 && !trimmed.match(/^[A-Z][a-z]+\s*@/)) {
+            title = trimmed;
+          }
+        }
+        if (trimmed.toLowerCase().startsWith('by ') && !author) {
+          author = trimmed.substring(3).trim();
+        }
+      }
+      if (!trimmed || (isHtmlContent && (trimmed.includes('<') || trimmed.includes('>')))) {
+        continue;
+      }
+      if (trimmed.includes(' @ ') || (trimmed && !trimmed.startsWith('-') && !trimmed.startsWith('Ability:') && !trimmed.startsWith('Tera Type:') && !trimmed.startsWith('EVs:') && !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && !trimmed.startsWith('#') && !trimmed.startsWith('Format:') && !trimmed.startsWith('by ') && !trimmed.startsWith('Level:') && currentPokemon === null)) {
+        if (currentPokemon && currentPokemon.name) {
+          pokemon.push({
+            name: currentPokemon.name,
+            item: currentPokemon.item,
+            ability: currentPokemon.ability,
+            teraType: currentPokemon.teraType,
+            moves: currentPokemon.moves || []
+          });
+        }
+        const parts = trimmed.split(' @ ');
+        const pokemonName = parts[0].replace(/\(.*?\)/g, '').trim();
+        const item = parts[1] || undefined;
+        currentPokemon = {
+          name: pokemonName,
+          item,
+          moves: []
+        };
+      } else if (trimmed.startsWith('Ability:') && currentPokemon) {
+        currentPokemon.ability = trimmed.replace('Ability:', '').trim();
+      } else if (trimmed.startsWith('Tera Type:') && currentPokemon) {
+        currentPokemon.teraType = trimmed.replace('Tera Type:', '').trim();
+      } else if (trimmed.startsWith('- ') && currentPokemon) {
+        const move = trimmed.replace('- ', '').trim();
+        if (!currentPokemon.moves) currentPokemon.moves = [];
+        currentPokemon.moves.push(move);
+      }
+    }
+    if (currentPokemon && currentPokemon.name) {
+      pokemon.push({
+        name: currentPokemon.name,
+        item: currentPokemon.item,
+        ability: currentPokemon.ability,
+        teraType: currentPokemon.teraType,
+        moves: currentPokemon.moves || []
+      });
+    }
+    return {
+      pokemon: pokemon.filter((p: any) => p.name),
+      title: title || undefined,
+      author: author || undefined
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
 function App() {
   const [gameplans, setGameplans] = useState<Gameplan[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -4464,52 +4404,6 @@ Impish Nature
     tournament: '',
     format: 'VGC'
   });
-
-  // Replay management functions
-  const handleReplayAdded = useCallback((gameplanId: string, replay: Replay) => {
-    setGameplans(prevGameplans => 
-      prevGameplans.map(gameplan => 
-        gameplan.id === gameplanId 
-          ? {
-              ...gameplan,
-              replays: {
-                ...gameplan.replays,
-                [replay.matchup]: {
-                  ...gameplan.replays?.[replay.matchup],
-                  [replay.gameplanNumber || 'general']: [
-                    ...(gameplan.replays?.[replay.matchup]?.[replay.gameplanNumber || 'general'] || []),
-                    replay
-                  ]
-                }
-              }
-            }
-          : gameplan
-      )
-    );
-  }, []);
-
-  const handleReplayDeleted = useCallback((gameplanId: string, replayId: string) => {
-    setGameplans(prevGameplans => 
-      prevGameplans.map(gameplan => 
-        gameplan.id === gameplanId 
-          ? {
-              ...gameplan,
-              replays: Object.fromEntries(
-                Object.entries(gameplan.replays || {}).map(([matchupKey, matchupReplays]) => [
-                  matchupKey,
-                  Object.fromEntries(
-                    Object.entries(matchupReplays).map(([gameplanKey, replays]) => [
-                      gameplanKey,
-                      replays.filter(replay => replay.id !== replayId)
-                    ])
-                  )
-                ])
-              )
-            }
-          : gameplan
-      )
-    );
-  }, []);
 
   // Load data prioritizing local API, then localStorage for all environments
   useEffect(() => {
@@ -5856,81 +5750,4 @@ Impish Nature
         accept=".json,.md"
         multiple
         onChange={handleImportFile}
-        style={{ display: 'none' }}
-      />
-
-      {/* Reset Modal */}
-      {isModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>Reset Data</h3>
-            <p>Are you sure you want to reset all data? This will clear localStorage and reload from the gameplans directory.</p>
-            <div className="modal-actions">
-              <button onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
-                Cancel
-              </button>
-              <button onClick={resetData} className="btn btn-danger">
-                Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Enhanced header component with user info
-const AppHeader: React.FC<{ 
-  isMobileSidebarOpen: boolean;
-  setIsMobileSidebarOpen: (open: boolean) => void;
-}> = ({ isMobileSidebarOpen, setIsMobileSidebarOpen }) => {
-  const { user, logout } = useAuth();
-
-  return (
-    <header className="header">
-      <div className="header-content">
-        <div className="header-title">
-          <button 
-            className="mobile-menu-toggle"
-            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            aria-label="Toggle menu"
-          >
-            ☰
-          </button>
-          <div>
-            <h1>🎮 VGC Team Manager</h1>
-            <p>Manage your VGC team strategies and gameplans</p>
-          </div>
-        </div>
-        
-        <div className="header-user">
-          <div className="user-profile">
-            <img src={user?.avatar_url} alt="Profile" className="user-profile-avatar" />
-            <div className="user-profile-info">
-              <span className="user-name">{user?.name || user?.login}</span>
-              <span className="user-status">Beta Access</span>
-            </div>
-          </div>
-          <button onClick={logout} className="btn btn-secondary btn-sm">
-            Sign Out
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-};
-
-// Main App component wrapped with authentication
-const AppWithAuth: React.FC = () => {
-  return (
-    <AuthProvider>
-      <AuthGuard>
-        <App />
-      </AuthGuard>
-    </AuthProvider>
-  );
-};
-
-export default AppWithAuth;
-
+        style={{ display: 'none'

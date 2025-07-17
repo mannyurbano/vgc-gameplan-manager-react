@@ -18,9 +18,9 @@ interface CloudFile {
 // Google Drive API configuration - these are safe to expose in frontend
 // API Key should be restricted by domain in Google Cloud Console
 const GOOGLE_DRIVE_CONFIG = {
-  apiKey: 'YOUR_GOOGLE_API_KEY_HERE', // Replace with actual API key
-  clientId: 'YOUR_GOOGLE_CLIENT_ID_HERE', // Replace with actual client ID
-  enabled: false // Set to true when you have valid credentials
+  apiKey: process.env.REACT_APP_GOOGLE_API_KEY || 'YOUR_GOOGLE_API_KEY_HERE', // Replace with actual API key
+  clientId: process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID_HERE', // Replace with actual client ID
+  enabled: !!(process.env.REACT_APP_GOOGLE_API_KEY && process.env.REACT_APP_GOOGLE_CLIENT_ID) // Auto-enable when credentials are provided
 };
 
 export const CloudImportModal: React.FC<CloudImportModalProps> = ({

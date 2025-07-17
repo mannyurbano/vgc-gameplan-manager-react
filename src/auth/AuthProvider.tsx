@@ -21,8 +21,8 @@ interface GitHubUser {
 }
 
 // Configuration for GitHub Pages + Railway setup
-const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP';
-const RAILWAY_BACKEND_URL = 'https://vgc-gameplan-manager-react-production.up.railway.app';
+const GITHUB_CLIENT_ID = process.env.REACT_APP_GITHUB_CLIENT_ID || 'Ov23liIpfWCMoPUySiiP';
+const RAILWAY_BACKEND_URL = process.env.REACT_APP_RAILWAY_BACKEND_URL || 'https://vgc-gameplan-manager-react-production.up.railway.app';
 
 // Development bypass - set to true for localhost development
 const BYPASS_AUTH_IN_DEV = process.env.NODE_ENV === 'development';

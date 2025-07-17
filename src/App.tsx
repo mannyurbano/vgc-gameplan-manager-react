@@ -3259,8 +3259,8 @@ const PokepasteTeamDisplay: React.FC<{
           break;
         }
         
-        // Look for Pokepaste links
-        if (inMatchupSection || !foundMatchupSection) {
+        // Look for Pokepaste links only within the correct matchup section
+        if (inMatchupSection) {
           const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
           if (pokepasteMatch) {
             return pokepasteMatch[0];

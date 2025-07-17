@@ -627,9 +627,10 @@ const parsePokepasteFormat = (content: string): Array<{pokemon: string, item: st
       if (line.startsWith('Ability:')) {
         currentPokemon.details.ability = line.replace('Ability:', '').trim();
       }
-      // Parse Level
+      // Skip Level parsing - we don't want to display Level: 50
       else if (line.startsWith('Level:')) {
-        currentPokemon.details.level = line.replace('Level:', '').trim();
+        // Skip level parsing
+        continue;
       }
       // Parse Shiny
       else if (line.startsWith('Shiny:')) {
@@ -790,19 +791,22 @@ const extractTeamPokemonWithItems = (content: string): Array<{pokemon: string, i
         }
       }
       
-      // Check for markdown format
-      if (line.match(/^\*\*([^*]+)\*\*\s*@\s*([^\n\r]+)/)) {
+      // Check for markdown format (but exclude "My Team:" lines)
+      if (line.match(/^\*\*([^*]+)\*\*\s*@\s*([^\n\r]+)/) && !line.toLowerCase().includes('my team:')) {
         hasMarkdownFormat = true;
       }
     }
     
-    // Consider it pokepaste format if we have at least 2 Pokemon lines with details
-    hasPokepasteFormat = pokemonLineCount >= 2 && detailLineCount >= 2;
+    // Consider it pokepaste format if we have at least 1 Pokemon line with details
+    hasPokepasteFormat = pokemonLineCount >= 1 && detailLineCount >= 1;
+    
+    console.log(`Pokemon extraction debug: pokemonLineCount=${pokemonLineCount}, detailLineCount=${detailLineCount}, hasMarkdownFormat=${hasMarkdownFormat}, hasPokepasteFormat=${hasPokepasteFormat}`);
     
     // If we detect pokepaste format, use the new parser
     if (hasPokepasteFormat && !hasMarkdownFormat) {
       console.log('Detected pokepaste format, using pokepaste parser');
       const pokepasteData = parsePokepasteFormat(content);
+      console.log('Pokepaste parser result:', pokepasteData);
       return pokepasteData.map(pokemon => ({
         pokemon: pokemon.pokemon,
         item: pokemon.item
@@ -1074,13 +1078,31 @@ const extractPokemonFromContent = (gameplan: Gameplan): string[] => {
   try {
     // Always extract from content to ensure consistency and avoid redundancy
     if (!gameplan || !gameplan.content) {
+      console.log('extractPokemonFromContent: No gameplan or content');
+      return [];
+    }
+    
+    console.log('extractPokemonFromContent: Extracting from content:', gameplan.title);
+    
+    // Check if there's a "My Team" pokepaste URL
+    const hasMyTeamPokepasteUrl = gameplan.content.toLowerCase().includes('my team:') && 
+                                  gameplan.content.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
+    
+    if (hasMyTeamPokepasteUrl) {
+      console.log('extractPokemonFromContent: Found "My Team" pokepaste URL, cannot fetch synchronously');
+      // For pokepaste-only teams, the sprites will show when the CheatSheet loads async data
+      // Return empty array so main list doesn't show "?" sprites
       return [];
     }
     
     // Use the same parsing logic as extractTeamPokemonWithItems for consistency
     const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
+    console.log('extractPokemonFromContent: teamWithItems result:', teamWithItems);
+    
     if (teamWithItems && teamWithItems.length > 0) {
-      return teamWithItems.map(teamMember => teamMember.pokemon).slice(0, 6);
+      const pokemonNames = teamWithItems.map(teamMember => teamMember.pokemon).slice(0, 6);
+      console.log('extractPokemonFromContent: Final Pokemon names:', pokemonNames);
+      return pokemonNames;
     }
     
     // Final fallback: legacy regex matching (for backward compatibility)
@@ -1366,9 +1388,9 @@ const PokemonSprite: React.FC<{
             position: 'absolute',
             bottom: -2,
             right: -2,
-            // Much smaller held items: max 16px, and use smaller percentage
-            width: Math.min(16, Math.max(8, size * 0.3)),
-            height: Math.min(16, Math.max(8, size * 0.3)),
+            // Held items: max 22px, reduced by 30% for better balance
+            width: Math.min(22, Math.max(11, size * 0.42)),
+            height: Math.min(22, Math.max(11, size * 0.42)),
             borderRadius: '50%',
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
             border: '1px solid rgba(255, 255, 255, 0.9)',
@@ -2045,34 +2067,26 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
             </div>
             <div className="matchup-recommendation">
               {/* Rival's Team */}
-              {matchups[selectedMatchup].opponentTeam && matchups[selectedMatchup].opponentTeam!.length > 0 && (
-                <div className="opponent-team-section">
-                  <strong>👥 Rival's Team:</strong>
-                  <div className="opponent-team-display">
-                    {(() => {
-                      try {
-                        const opponentTeamWithItems = extractOpponentTeamWithItems(gameplan.content, selectedMatchup);
-                        console.log(`extractOpponentTeamWithItems result:`, opponentTeamWithItems);
-                        console.log(`matchups[selectedMatchup].opponentTeam:`, matchups[selectedMatchup]?.opponentTeam);
-                        if (opponentTeamWithItems && opponentTeamWithItems.length > 0) {
-                          console.log(`Using extractOpponentTeamWithItems data`);
-                          return opponentTeamWithItems.map((teamMember, index) => (
-                            <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
-                              <PokemonSprite 
-                                pokemon={teamMember.pokemon} 
-                                size={56}
-                                heldItem={teamMember.item}
-                                showItem={true}
-                              />
-                              <span className="opponent-team-name">{teamMember.pokemon}</span>
-                            </div>
-                          ));
-                        } else if (matchups[selectedMatchup] && matchups[selectedMatchup].opponentTeam) {
-                          console.log(`Using fallback matchups data`);
-                          console.log(`Opponent team members:`, matchups[selectedMatchup].opponentTeam);
-                          return matchups[selectedMatchup].opponentTeam!.map((teamMember, index) => {
-                            console.log(`Rendering opponent team member: ${teamMember.pokemon} @ ${teamMember.item}`);
-                            return (
+              <div className="opponent-team-section">
+                {/* Auto-fetched Pokepaste Data */}
+                <PokepasteTeamDisplay 
+                  content={gameplan.content} 
+                  selectedMatchup={selectedMatchup} 
+                />
+                
+                {/* Fallback to Manual Team Data */}
+                {matchups[selectedMatchup].opponentTeam && matchups[selectedMatchup].opponentTeam!.length > 0 && (
+                  <div>
+                    <strong>👥 Rival's Team:</strong>
+                    <div className="opponent-team-display">
+                      {(() => {
+                        try {
+                          const opponentTeamWithItems = extractOpponentTeamWithItems(gameplan.content, selectedMatchup);
+                          console.log(`extractOpponentTeamWithItems result:`, opponentTeamWithItems);
+                          console.log(`matchups[selectedMatchup].opponentTeam:`, matchups[selectedMatchup]?.opponentTeam);
+                          if (opponentTeamWithItems && opponentTeamWithItems.length > 0) {
+                            console.log(`Using extractOpponentTeamWithItems data`);
+                            return opponentTeamWithItems.map((teamMember, index) => (
                               <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
                                 <PokemonSprite 
                                   pokemon={teamMember.pokemon} 
@@ -2082,17 +2096,35 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                                 />
                                 <span className="opponent-team-name">{teamMember.pokemon}</span>
                               </div>
-                            );
-                          });
-                        } else {
-                          return <div>No opponent team data</div>;
+                            ));
+                          } else if (matchups[selectedMatchup] && matchups[selectedMatchup].opponentTeam) {
+                            console.log(`Using fallback matchups data`);
+                            console.log(`Opponent team members:`, matchups[selectedMatchup].opponentTeam);
+                            return matchups[selectedMatchup].opponentTeam!.map((teamMember, index) => {
+                              console.log(`Rendering opponent team member: ${teamMember.pokemon} @ ${teamMember.item}`);
+                              return (
+                                <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
+                                  <PokemonSprite 
+                                    pokemon={teamMember.pokemon} 
+                                    size={56}
+                                    heldItem={teamMember.item}
+                                    showItem={true}
+                                  />
+                                  <span className="opponent-team-name">{teamMember.pokemon}</span>
+                                </div>
+                              );
+                            });
+                          } else {
+                            return <div>No opponent team data</div>;
+                          }
+                        } catch (error) {
+                          console.error('Error displaying opponent team:', error);
+                          return <div>Error loading opponent team</div>;
                         }
-                      } catch (error) {
-                        console.error('Error displaying opponent team:', error);
-                        return <div>Error loading opponent team</div>;
-                      }
-                    })()}
+                      })()}
+                    </div>
                   </div>
+                )}
                   
                   {matchups[selectedMatchup].pokepasteUrl && (
                     <a 
@@ -2102,157 +2134,138 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                       className="pokepaste-link"
                       style={{ marginTop: 12, display: 'inline-block' }}
                     >
-                      📋 View Pokepaste
+                      📋 Pokepaste
                     </a>
                   )}
+                </div>
 
-                  {/* Intelligent Replay Section */}
-                  <div style={{ marginTop: 16 }}>
-                    <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 12 }}>
-                      🎮 Replays
-                    </h5>
-                    <div style={{
-                      background: 'rgba(255,255,255,0.02)',
-                      border: '1px solid rgba(16, 185, 129, 0.2)',
-                      borderRadius: 8,
-                      padding: 16
-                    }}>
-                      {(() => {
-                        const replays = extractReplaysForMatchup(gameplan.content, selectedMatchup);
-                        
-                        if (replays.length === 0) {
-                          return (
-                            <>
-                              <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 12 }}>
-                                No replays found for this matchup yet
-                              </p>
-                              <a
-                                href="https://replay.pokemonshowdown.com/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 6,
-                                  color: '#60a5fa',
-                                  textDecoration: 'none',
-                                  fontSize: 14,
-                                  fontWeight: 500,
-                                  padding: '8px 16px',
-                                  background: 'rgba(96, 165, 250, 0.1)',
-                                  border: '1px solid rgba(96, 165, 250, 0.3)',
-                                  borderRadius: 6,
-                                  transition: 'all 0.2s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.2)';
-                                  e.currentTarget.style.borderColor = '#60a5fa';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)';
-                                  e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.3)';
-                                }}
-                              >
-                                🔗 Browse Replays on Showdown
-                              </a>
-                            </>
-                          );
-                        }
-                        
+                {/* Intelligent Replay Section */}
+                <div style={{ marginTop: 16 }}>
+                  <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 12 }}>
+                    🎮 Replays
+                  </h5>
+                  <div style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    borderRadius: 8,
+                    padding: 16
+                  }}>
+                    {(() => {
+                      const replays = extractReplaysForMatchup(gameplan.content, selectedMatchup);
+                      
+                      if (replays.length === 0) {
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {replays.map((replay, index) => {
-                              if (replay.isPlaceholder) {
-                                return (
-                                  <div key={index} style={{
-                                    padding: 12,
-                                    background: 'rgba(251, 191, 36, 0.1)',
-                                    border: '1px solid rgba(251, 191, 36, 0.3)',
-                                    borderRadius: 6,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 6
-                                  }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                      <span style={{ color: '#f59e0b', fontSize: 14 }}>⚠️</span>
-                                      <span style={{ color: '#f59e0b', fontSize: 14, fontWeight: 500 }}>
-                                        Placeholder Replay #{index + 1}
-                                      </span>
-                                    </div>
-                                    <p style={{ color: '#92400e', fontSize: 13, margin: 0 }}>
-                                      This is a template replay URL. Replace with actual Pokemon Showdown replay link.
-                                    </p>
-                                    {replay.notes && (
-                                      <p style={{ color: '#78716c', fontSize: 13, margin: 0, fontStyle: 'italic' }}>
-                                        {replay.notes}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              
-                              return (
-                                <div key={index} style={{
-                                  padding: 12,
-                                  background: 'rgba(16, 185, 129, 0.1)',
-                                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                                  borderRadius: 6,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 6
-                                }}>
-                                  <a
-                                    href={replay.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      color: '#10b981',
-                                      textDecoration: 'none',
-                                      fontSize: 14,
-                                      fontWeight: 500,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 6
-                                    }}
-                                  >
-                                    <span>🎥</span>
-                                    <span>Replay #{index + 1}</span>
-                                    <span style={{ color: '#6b7280', fontSize: 12 }}>↗</span>
-                                  </a>
-                                  {replay.notes && (
-                                    <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
-                                      {replay.notes}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            })}
+                          <>
+                            <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 12 }}>
+                              No replays found for this matchup yet
+                            </p>
                             <a
                               href="https://replay.pokemonshowdown.com/"
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{
-                                alignSelf: 'flex-start',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
                                 color: '#60a5fa',
                                 textDecoration: 'none',
-                                fontSize: 13,
+                                fontSize: 14,
                                 fontWeight: 500,
-                                padding: '6px 12px',
+                                padding: '8px 16px',
                                 background: 'rgba(96, 165, 250, 0.1)',
                                 border: '1px solid rgba(96, 165, 250, 0.3)',
-                                borderRadius: 4,
-                                marginTop: 4
+                                borderRadius: 6,
+                                transition: 'all 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(96, 165, 250, 0.2)';
+                                e.currentTarget.style.borderColor = '#60a5fa';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)';
+                                e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.3)';
                               }}
                             >
-                              + Add More Replays
+                              🔗 Browse Replays on Showdown
                             </a>
-                          </div>
+                          </>
                         );
-                      })()}
-                    </div>
+                      }
+                      
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {replays.map((replay, index) => {
+                            if (replay.isPlaceholder) {
+                              return (
+                                <div key={index} style={{
+                                  padding: 12,
+                                  background: 'rgba(251, 191, 36, 0.1)',
+                                  border: '1px solid rgba(251, 191, 36, 0.3)',
+                                  borderRadius: 6,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 6
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ color: '#f59e0b', fontSize: 14 }}>⚠️</span>
+                                    <span style={{ color: '#f59e0b', fontSize: 14, fontWeight: 500 }}>
+                                      Placeholder Replay #{index + 1}
+                                    </span>
+                                  </div>
+                                  <p style={{ color: '#92400e', fontSize: 13, margin: 0 }}>
+                                    This is a template replay URL. Replace with actual Pokemon Showdown replay link.
+                                  </p>
+                                  {replay.notes && (
+                                    <p style={{ color: '#78716c', fontSize: 13, margin: 0, fontStyle: 'italic' }}>
+                                      {replay.notes}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            
+                            return (
+                              <div key={index} style={{
+                                padding: 12,
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                borderRadius: 6,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6
+                              }}>
+                                <a
+                                  href={replay.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    color: '#10b981',
+                                    textDecoration: 'none',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6
+                                  }}
+                                >
+                                  <span>🎥</span>
+                                  <span>Replay #{index + 1}</span>
+                                  <span style={{ color: '#6b7280', fontSize: 12 }}>↗</span>
+                                </a>
+                                {replay.notes && (
+                                  <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
+                                    {replay.notes}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
-              )}
+              
               {/* --- New Gameplans Section --- */}
               {gameplansForMatchup.length > 0 && (
                 <div className="gameplans-section">
@@ -2533,6 +2546,7 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
 
 // Cheat Sheet Component
 const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
+  const [pokepasteTeamData, setPokepasteTeamData] = useState<string[]>([]);
 
   const extractCheatSheetData = (content: string) => {
     const lines = content.split('\n');
@@ -2589,7 +2603,9 @@ const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   };
 
   const { leads, matchups } = extractCheatSheetData(gameplan.content);
-  const allPokemon = extractPokemonFromContent(gameplan);
+  
+  // Use pokepaste data if available, otherwise fallback to manual extraction
+  const allPokemon = pokepasteTeamData.length > 0 ? pokepasteTeamData : extractPokemonFromContent(gameplan);
   const teamWithItems = extractTeamPokemonWithItems(gameplan.content);
   
 
@@ -2601,40 +2617,50 @@ const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
       {/* Team Overview */}
       <div className="cheat-section">
         <h4>Team Composition</h4>
-        <div className="pokemon-team-display">
-          {teamWithItems && teamWithItems.length > 0 ? (
-            teamWithItems.slice(0, 6).map((teamMember, index) => {
-              return (
-                <div 
-                  key={`${teamMember.pokemon}-${index}`} 
-                  className="pokemon-team-item"
-                >
-                  <PokemonSprite 
-                    pokemon={teamMember.pokemon} 
-                    size={56} 
-                    heldItem={teamMember.item}
-                    showItem={true}
-                  />
-                  <span className="pokemon-name-compact">{teamMember.pokemon}</span>
-                </div>
-              );
-            })
-          ) : allPokemon && allPokemon.length > 0 ? (
-            allPokemon.slice(0, 6).map(pokemon => {
-              return (
-                <div 
-                  key={pokemon} 
-                  className="pokemon-team-item"
-                >
-                  <PokemonSprite pokemon={pokemon} size={56} />
-                  <span className="pokemon-name-compact">{pokemon}</span>
-                </div>
-              );
-            })
-          ) : (
-            <div>No team data found</div>
-          )}
-        </div>
+        
+        {/* Auto-fetched My Team Pokepaste Data */}
+        <MyTeamPokepasteDisplay 
+          content={gameplan.content} 
+          onPokemonDataLoaded={setPokepasteTeamData}
+        />
+        
+        {/* Fallback to Manual Team Data - Only show if no pokepaste data */}
+        {!gameplan.content.toLowerCase().includes('my team:') || !gameplan.content.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i) ? (
+          <div className="pokemon-team-display">
+            {teamWithItems && teamWithItems.length > 0 ? (
+              teamWithItems.slice(0, 6).map((teamMember, index) => {
+                return (
+                  <div 
+                    key={`${teamMember.pokemon}-${index}`} 
+                    className="pokemon-team-item"
+                  >
+                    <PokemonSprite 
+                      pokemon={teamMember.pokemon} 
+                      size={56} 
+                      heldItem={teamMember.item}
+                      showItem={true}
+                    />
+                    <span className="pokemon-name-compact">{teamMember.pokemon}</span>
+                  </div>
+                );
+              })
+            ) : allPokemon && allPokemon.length > 0 ? (
+              allPokemon.slice(0, 6).map(pokemon => {
+                return (
+                  <div 
+                    key={pokemon} 
+                    className="pokemon-team-item"
+                  >
+                    <PokemonSprite pokemon={pokemon} size={56} />
+                    <span className="pokemon-name-compact">{pokemon}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div>No team data found</div>
+            )}
+          </div>
+        ) : null}
       </div>
 
 
@@ -2685,7 +2711,668 @@ const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   );
 };
 
+// Pokepaste interfaces and utility functions
+interface PokemonData {
+  name: string;
+  item?: string;
+  ability?: string;
+  teraType?: string;
+  moves: string[];
+}
 
+interface OpponentTeamData {
+  pokemon: PokemonData[];
+  title?: string;
+  author?: string;
+}
+
+const fetchPokepasteData = async (url: string): Promise<OpponentTeamData | null> => {
+  try {
+    // Extract the ID from the Pokepaste URL
+    const urlMatch = url.match(/pokepast\.es\/([a-f0-9]+)/i);
+    if (!urlMatch) {
+      console.warn('Invalid pokepaste URL format:', url);
+      return null;
+    }
+    
+    const pokepasteId = urlMatch[1];
+    
+    // Check for example/placeholder URLs
+    const exampleIds = ['example-speed-team', 'example-miraidon-lunala', 'example-priority-team', 'example-koraidon-solgaleo', 'example-calyrex-ice'];
+    if (exampleIds.some(id => url.includes(id))) {
+      console.warn('This is an example pokepaste URL, not a real team:', url);
+      return null;
+    }
+    
+    // Validate that the ID looks like a real pokepaste ID (hexadecimal)
+    if (!/^[a-f0-9]{12,}$/i.test(pokepasteId)) {
+      console.warn('Pokepaste ID does not appear to be valid:', pokepasteId);
+      return null;
+    }
+    
+    // Try multiple endpoints in order of preference
+    const endpoints = [
+      `https://pokepast.es/${pokepasteId}/raw`, // Raw text endpoint (often has better CORS)
+      `https://pokepast.es/${pokepasteId}.txt`, // Alternative raw endpoint
+      `https://cors-anywhere.herokuapp.com/https://pokepast.es/${pokepasteId}`, // CORS proxy as fallback
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`https://pokepast.es/${pokepasteId}`)}` // Another CORS proxy
+    ];
+    
+    let text = '';
+    let response: Response | null = null;
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Trying to fetch pokepaste from: ${endpoint}`);
+        response = await fetch(endpoint);
+        
+        if (response.ok) {
+          if (endpoint.includes('allorigins.win')) {
+            // allorigins returns JSON with the content in .contents
+            const data = await response.json();
+            text = data.contents;
+          } else {
+            text = await response.text();
+          }
+          
+          // Check if we got valid pokepaste content
+          if (text && (text.includes('@') || text.includes('Ability:') || text.includes('EVs:'))) {
+            console.log(`Successfully fetched pokepaste data from: ${endpoint}`);
+            break;
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch from ${endpoint}:`, error);
+        continue;
+      }
+    }
+    
+    if (!text) {
+      console.error('All pokepaste fetch methods failed');
+      return null;
+    }
+    
+    // Parse the team data
+    const pokemon: PokemonData[] = [];
+    const lines = text.split('\n');
+    let currentPokemon: Partial<PokemonData> | null = null;
+    let title = '';
+    let author = '';
+    
+    // Check if this is HTML content or raw text
+    const isHtmlContent = text.includes('<html>') || text.includes('<title>');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (isHtmlContent) {
+        // Extract title from HTML
+        if (trimmed.includes('<title>') && !title) {
+          const titleMatch = trimmed.match(/<title>(.+?)<\/title>/);
+          if (titleMatch) title = titleMatch[1].replace(' · Pokepaste', '');
+        }
+        
+        // Extract author from "by" line in HTML
+        if (trimmed.startsWith('##') && trimmed.includes('by ')) {
+          const authorMatch = trimmed.match(/by (.+)/);
+          if (authorMatch) author = authorMatch[1];
+        }
+        
+        // Skip HTML tags and only process actual content
+        if (trimmed.includes('<') && trimmed.includes('>')) {
+          continue;
+        }
+      } else {
+        // For raw text, extract title and author from the first few lines
+        if (!title && trimmed && !trimmed.includes('@') && !trimmed.startsWith('-') && 
+            !trimmed.startsWith('Ability:') && !trimmed.startsWith('EVs:') && 
+            !trimmed.startsWith('Level:') && !trimmed.startsWith('Tera Type:') &&
+            !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && lines.indexOf(line) < 5) {
+          // Potential title line
+          if (trimmed.length > 3 && !trimmed.match(/^[A-Z][a-z]+\s*@/)) {
+            title = trimmed;
+          }
+        }
+        
+        // Look for author in raw text (sometimes appears as "by [author]")
+        if (trimmed.toLowerCase().startsWith('by ') && !author) {
+          author = trimmed.substring(3).trim();
+        }
+      }
+      
+      // Skip empty lines and HTML content
+      if (!trimmed || (isHtmlContent && (trimmed.includes('<') || trimmed.includes('>')))) {
+        continue;
+      }
+      
+      // Pokemon name line (contains @ for item)
+      if (trimmed.includes(' @ ') || (trimmed && !trimmed.startsWith('-') && !trimmed.startsWith('Ability:') && !trimmed.startsWith('Tera Type:') && !trimmed.startsWith('EVs:') && !trimmed.startsWith('IVs:') && !trimmed.includes('Nature') && !trimmed.startsWith('#') && !trimmed.startsWith('Format:') && !trimmed.startsWith('by ') && !trimmed.startsWith('Level:') && currentPokemon === null)) {
+        // Save previous Pokemon if exists
+        if (currentPokemon && currentPokemon.name) {
+          pokemon.push({
+            name: currentPokemon.name,
+            item: currentPokemon.item,
+            ability: currentPokemon.ability,
+            teraType: currentPokemon.teraType,
+            moves: currentPokemon.moves || []
+          });
+        }
+        
+        // Parse new Pokemon
+        const parts = trimmed.split(' @ ');
+        const pokemonName = parts[0].replace(/\(.*?\)/g, '').trim(); // Remove gender/nickname in parentheses
+        const item = parts[1] || undefined;
+        
+        currentPokemon = {
+          name: pokemonName,
+          item,
+          moves: []
+        };
+      }
+      // Ability line
+      else if (trimmed.startsWith('Ability:') && currentPokemon) {
+        currentPokemon.ability = trimmed.replace('Ability:', '').trim();
+      }
+      // Tera Type line
+      else if (trimmed.startsWith('Tera Type:') && currentPokemon) {
+        currentPokemon.teraType = trimmed.replace('Tera Type:', '').trim();
+      }
+      // Move line
+      else if (trimmed.startsWith('- ') && currentPokemon) {
+        const move = trimmed.replace('- ', '').trim();
+        if (!currentPokemon.moves) currentPokemon.moves = [];
+        currentPokemon.moves.push(move);
+      }
+    }
+    
+    // Add the last Pokemon
+    if (currentPokemon && currentPokemon.name) {
+      pokemon.push({
+        name: currentPokemon.name,
+        item: currentPokemon.item,
+        ability: currentPokemon.ability,
+        teraType: currentPokemon.teraType,
+        moves: currentPokemon.moves || []
+      });
+    }
+    
+    return {
+      pokemon: pokemon.filter(p => p.name), // Only include Pokemon with names
+      title: title || undefined,
+      author: author || undefined
+    };
+  } catch (error) {
+    console.error('Error fetching Pokepaste data:', error);
+    return null;
+  }
+};
+
+// Gameplan List Item Component (with async Pokemon loading)
+const GameplanListItem: React.FC<{ 
+  gameplan: Gameplan;
+  isSelected: boolean;
+  onView: (gameplan: Gameplan) => void;
+  onEdit: (gameplan: Gameplan) => void;
+  onDelete: (gameplanId: string) => void;
+}> = ({ gameplan, isSelected, onView, onEdit, onDelete }) => {
+  const [pokemonList, setPokemonList] = useState<string[]>([]);
+
+  return (
+    <div 
+      key={gameplan.id} 
+      className={`gameplan-list-item ${isSelected ? 'selected' : ''}`}
+      onClick={() => onView(gameplan)}
+    >
+      {/* Hidden component that loads Pokemon names */}
+      <PokemonNamesLoader 
+        content={gameplan.content} 
+        onPokemonNamesLoaded={setPokemonList}
+      />
+      
+      <div className="gameplan-list-header">
+        <h4 className="gameplan-list-title">{gameplan.title || 'Untitled'}</h4>
+        <div className="gameplan-list-actions">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onEdit(gameplan); }}
+            className="btn-icon edit"
+            title="Edit"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(gameplan.id); }}
+            className="btn-icon delete"
+            title="Delete"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              <line x1="10" x2="10" y1="11" y2="17"/>
+              <line x1="14" x2="14" y1="11" y2="17"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      {pokemonList && pokemonList.length > 0 && (
+        <div className="pokemon-row">
+          {pokemonList.slice(0, 6).map((pokemon, index) => (
+            <div key={`${pokemon}-${index}`} className="pokemon-mini">
+              <PokemonSprite pokemon={pokemon} size={58} />
+            </div>
+          ))}
+          {pokemonList.length > 6 && (
+            <span className="pokemon-more">+{pokemonList.length - 6}</span>
+          )}
+        </div>
+      )}
+      
+      <div className="gameplan-list-meta">
+        <div className="tags-mini">
+          {gameplan.tags && gameplan.tags.slice(0, 2).map(tag => (
+            <span key={tag} className="tag-mini">{tag}</span>
+          ))}
+          {gameplan.tags && gameplan.tags.length > 2 && (
+            <span className="tag-mini">+{gameplan.tags.length - 2}</span>
+          )}
+        </div>
+        <div className="date-mini">
+          {gameplan.season && <span className="season-mini">S{gameplan.season}</span>}
+          <span className="date-text">{gameplan.dateCreated}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Simple Pokemon Names Loader (for left panel sprites)
+const PokemonNamesLoader: React.FC<{ 
+  content: string;
+  onPokemonNamesLoaded: (pokemon: string[]) => void;
+}> = ({ content, onPokemonNamesLoaded }) => {
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const extractMyTeamPokepasteUrl = (content: string): string | null => {
+      const lines = content.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Look for "My Team" pokepaste links
+        if (line.toLowerCase().includes('my team:') || line.toLowerCase().includes('**my team:**')) {
+          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
+          if (pokepasteMatch) {
+            return pokepasteMatch[0];
+          }
+        }
+      }
+      
+      return null;
+    };
+
+    const loadPokemonNames = async () => {
+      const url = extractMyTeamPokepasteUrl(content);
+      if (!url) {
+        // No pokepaste URL found, try manual extraction
+        const teamWithItems = extractTeamPokemonWithItems(content);
+        if (teamWithItems && teamWithItems.length > 0) {
+          onPokemonNamesLoaded(teamWithItems.map(tm => tm.pokemon));
+                 } else {
+           // Final fallback to regex extraction (same as extractPokemonFromContent)
+           const pokemonNames = Object.keys(POKEMON_ID_MAP);
+           const found: string[] = [];
+           
+           pokemonNames.forEach(pokemon => {
+             try {
+               const regex = new RegExp(`\\b${pokemon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+               if (regex.test(content)) {
+                 found.push(pokemon);
+               }
+             } catch (regexError) {
+               // Skip problematic Pokemon names
+             }
+           });
+           
+           onPokemonNamesLoaded(Array.from(new Set(found)).slice(0, 6));
+         }
+        return;
+      }
+
+      setLoading(true);
+      
+      try {
+        const data = await fetchPokepasteData(url);
+        
+        if (data && data.pokemon) {
+          const pokemonNames = data.pokemon.map(p => p.name);
+          onPokemonNamesLoaded(pokemonNames);
+        } else {
+          // Fallback to manual extraction if pokepaste fails
+          const teamWithItems = extractTeamPokemonWithItems(content);
+          if (teamWithItems && teamWithItems.length > 0) {
+            onPokemonNamesLoaded(teamWithItems.map(tm => tm.pokemon));
+          } else {
+            onPokemonNamesLoaded([]);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading Pokemon names from pokepaste:', err);
+        // Fallback to manual extraction
+        const teamWithItems = extractTeamPokemonWithItems(content);
+        if (teamWithItems && teamWithItems.length > 0) {
+          onPokemonNamesLoaded(teamWithItems.map(tm => tm.pokemon));
+        } else {
+          onPokemonNamesLoaded([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPokemonNames();
+  }, [content, onPokemonNamesLoaded]);
+
+  // This component doesn't render anything - it just loads data
+  return null;
+};
+
+// My Team Pokepaste Display Component
+const MyTeamPokepasteDisplay: React.FC<{ 
+  content: string;
+  onPokemonDataLoaded?: (pokemon: string[]) => void;
+}> = ({ content, onPokemonDataLoaded }) => {
+  const [pokepasteData, setPokepasteData] = useState<OpponentTeamData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [pokepasteUrl, setPokepasteUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const extractMyTeamPokepasteUrl = (content: string): string | null => {
+      const lines = content.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Look for "My Team" pokepaste links
+        if (line.toLowerCase().includes('my team:') || line.toLowerCase().includes('**my team:**')) {
+          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
+          if (pokepasteMatch) {
+            return pokepasteMatch[0];
+          }
+        }
+      }
+      
+      return null;
+    };
+
+    const loadMyTeamData = async () => {
+      const url = extractMyTeamPokepasteUrl(content);
+      if (!url) {
+        console.log('No "My Team" pokepaste URL found');
+        setPokepasteUrl(null);
+        return;
+      }
+
+      setPokepasteUrl(url);
+      setLoading(true);
+      setError(null);
+      
+      try {
+        console.log('Loading my team pokepaste data from:', url);
+        const data = await fetchPokepasteData(url);
+        
+        if (data) {
+          setPokepasteData(data);
+          console.log('Successfully loaded my team pokepaste data:', data);
+          console.log('Pokemon data structure:', data.pokemon.map(p => ({ 
+            name: p.name, 
+            item: p.item, 
+            ability: p.ability, 
+            teraType: p.teraType, 
+            moves: p.moves,
+            allProps: Object.keys(p)
+          })));
+          
+          // Notify parent component of the pokemon names
+          if (onPokemonDataLoaded && data.pokemon) {
+            const pokemonNames = data.pokemon.map(p => p.name);
+            onPokemonDataLoaded(pokemonNames);
+          }
+        } else {
+          setError('Failed to load team data from Pokepaste');
+        }
+      } catch (err) {
+        console.error('Error loading my team Pokepaste:', err);
+        setError('Network error while loading team data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMyTeamData();
+  }, [content]);
+
+  if (loading) {
+    return (
+      <div className="pokepaste-loading">
+        <span>🔄 Loading your team from Pokepaste...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="pokepaste-error">
+        <span>⚠️ {error}</span>
+      </div>
+    );
+  }
+
+  if (!pokepasteData || !pokepasteData.pokemon.length) {
+    return null;
+  }
+
+  return (
+    <div className="my-team-pokepaste-display">
+      <div className="pokepaste-header">
+        <strong>Team Composition</strong>
+        {pokepasteUrl && (
+          <a 
+            href={pokepasteUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="pokepaste-link"
+          >
+            📋 Pokepaste
+          </a>
+        )}
+      </div>
+      <div className="my-team-pokemon-grid">
+        {pokepasteData.pokemon.map((pokemon, index) => (
+          <div key={`my-team-${pokemon.name}-${index}`} className="my-team-pokemon-item">
+            <div className="pokemon-sprite-section">
+              <PokemonSprite 
+                pokemon={pokemon.name} 
+                size={72}
+                heldItem={pokemon.item}
+                showItem={true}
+              />
+            </div>
+            <div className="pokemon-details-section">
+              <div className="pokemon-header">
+                <span className="pokemon-name">{pokemon.name}</span>
+                {pokemon.item && <span className="pokemon-item">@ {pokemon.item}</span>}
+              </div>
+              <div className="pokemon-info">
+                {pokemon.ability && <span className="pokemon-ability">Ability: {pokemon.ability}</span>}
+                {pokemon.teraType && <span className="pokemon-tera">Tera: {pokemon.teraType}</span>}
+              </div>
+              {pokemon.moves.length > 0 && (
+                <div className="pokemon-moves-section">
+                  <span className="moves-label">Moves:</span>
+                  <div className="pokemon-moves-list">
+                    {pokemon.moves.map((move, moveIndex) => (
+                      <span key={moveIndex} className="pokemon-move">{move}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Pokepaste Team Display Component
+const PokepasteTeamDisplay: React.FC<{ 
+  content: string; 
+  selectedMatchup: string; 
+}> = ({ content, selectedMatchup }) => {
+  const [pokepasteData, setPokepasteData] = useState<OpponentTeamData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const extractPokepasteUrl = (content: string, matchup: string): string | null => {
+      const lines = content.split('\n');
+      let inMatchupSection = false;
+      let foundMatchupSection = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if we're entering the matchup section
+        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
+          inMatchupSection = true;
+          foundMatchupSection = true;
+          continue;
+        }
+        
+        // Check if we're leaving the matchup section
+        if (foundMatchupSection && inMatchupSection && 
+            (line.startsWith('###') || line.startsWith('##')) && 
+            !line.toLowerCase().includes(matchup.toLowerCase())) {
+          break;
+        }
+        
+        // Look for Pokepaste links
+        if (inMatchupSection || !foundMatchupSection) {
+          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
+          if (pokepasteMatch) {
+            return pokepasteMatch[0];
+          }
+        }
+      }
+      
+      return null;
+    };
+
+    const loadPokepasteData = async () => {
+      const url = extractPokepasteUrl(content, selectedMatchup);
+      if (!url) {
+        console.log('No pokepaste URL found for matchup:', selectedMatchup);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      
+      try {
+        console.log('Loading pokepaste data from:', url);
+        const data = await fetchPokepasteData(url);
+        
+        if (data) {
+          setPokepasteData(data);
+          console.log('Successfully loaded pokepaste data:', data);
+        } else {
+          // Check if this is an example URL
+          const isExample = url.includes('example-') || !url.match(/pokepast\.es\/[a-f0-9]{12,}/i);
+          if (isExample) {
+            setError('This is an example Pokepaste URL. Please replace with a real team URL.');
+          } else {
+            setError('Failed to load team data. The Pokepaste may be private or invalid.');
+          }
+        }
+      } catch (err) {
+        console.error('Error loading Pokepaste:', err);
+        setError('Network error while loading Pokepaste data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (selectedMatchup) {
+      loadPokepasteData();
+    }
+  }, [content, selectedMatchup]);
+
+  if (loading) {
+    return (
+      <div className="pokepaste-loading">
+        <span>🔄 Loading opponent team from Pokepaste...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="pokepaste-error">
+        <span>⚠️ {error}</span>
+      </div>
+    );
+  }
+
+  if (!pokepasteData || !pokepasteData.pokemon.length) {
+    return null;
+  }
+
+  return (
+    <div className="pokepaste-team-display">
+      <div className="pokepaste-header">
+        <strong>🔗 Rival's team:</strong>
+        {pokepasteData.title && <span className="pokepaste-title">{pokepasteData.title}</span>}
+        {pokepasteData.author && <span className="pokepaste-author">by {pokepasteData.author}</span>}
+      </div>
+      <div className="pokepaste-pokemon-grid">
+        {pokepasteData.pokemon.map((pokemon, index) => (
+          <div key={`pokepaste-${pokemon.name}-${index}`} className="pokepaste-pokemon-item">
+            <PokemonSprite 
+              pokemon={pokemon.name} 
+              size={72}
+              heldItem={pokemon.item}
+              showItem={true}
+            />
+            <div className="pokepaste-pokemon-details">
+              <span className="pokepaste-pokemon-name">{pokemon.name}</span>
+              {pokemon.item && <span className="pokepaste-pokemon-item">@ {pokemon.item}</span>}
+              {pokemon.ability && <span className="pokepaste-pokemon-ability">Ability: {pokemon.ability}</span>}
+              {pokemon.teraType && <span className="pokepaste-pokemon-tera">Tera: {pokemon.teraType}</span>}
+              {pokemon.moves.length > 0 && (
+                <div className="pokepaste-pokemon-moves">
+                  <span className="moves-label">Moves:</span>
+                  <div className="pokemon-moves-list">
+                    {pokemon.moves.map((move, moveIndex) => (
+                      <span key={moveIndex} className="pokepaste-move">{move}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 function App() {
   const [gameplans, setGameplans] = useState<Gameplan[]>([]);
@@ -3868,72 +4555,17 @@ Impish Nature
 
             {displayGameplans.map((gameplan: Gameplan) => {
               try {
-                const pokemonList = extractPokemonFromContent(gameplan);
                 const isSelected = selectedGameplan?.id === gameplan.id;
                 
                 return (
-                  <div 
-                    key={gameplan.id} 
-                    className={`gameplan-list-item ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleViewGameplan(gameplan)}
-                  >
-                    <div className="gameplan-list-header">
-                      <h4 className="gameplan-list-title">{gameplan.title || 'Untitled'}</h4>
-                      <div className="gameplan-list-actions">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleEditGameplan(gameplan); }}
-                          className="btn-icon edit"
-                          title="Edit"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); deleteGameplan(gameplan.id); }}
-                          className="btn-icon delete"
-                          title="Delete"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 6h18"/>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                            <line x1="10" x2="10" y1="11" y2="17"/>
-                            <line x1="14" x2="14" y1="11" y2="17"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {pokemonList && pokemonList.length > 0 && (
-                      <div className="pokemon-row">
-                        {pokemonList.slice(0, 6).map((pokemon, index) => (
-                          <div key={`${pokemon}-${index}`} className="pokemon-mini">
-                            <PokemonSprite pokemon={pokemon} size={58} />
-                          </div>
-                        ))}
-                        {pokemonList.length > 6 && (
-                          <span className="pokemon-more">+{pokemonList.length - 6}</span>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className="gameplan-list-meta">
-                      <div className="tags-mini">
-                        {gameplan.tags && gameplan.tags.slice(0, 2).map(tag => (
-                          <span key={tag} className="tag-mini">{tag}</span>
-                        ))}
-                        {gameplan.tags && gameplan.tags.length > 2 && (
-                          <span className="tag-mini">+{gameplan.tags.length - 2}</span>
-                        )}
-                      </div>
-                      <div className="date-mini">
-                        {gameplan.season && <span className="season-mini">S{gameplan.season}</span>}
-                        <span className="date-text">{gameplan.dateCreated}</span>
-                      </div>
-                    </div>
-                  </div>
+                  <GameplanListItem
+                    key={gameplan.id}
+                    gameplan={gameplan}
+                    isSelected={isSelected}
+                    onView={handleViewGameplan}
+                    onEdit={handleEditGameplan}
+                    onDelete={deleteGameplan}
+                  />
                 );
               } catch (error) {
                 console.error('Error rendering gameplan:', error);

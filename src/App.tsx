@@ -5750,4 +5750,12 @@ Impish Nature
         accept=".json,.md"
         multiple
         onChange={handleImportFile}
-        style={{ display: 'none'
+        style={{ display: 'none' }}
+      />
+    </div>
+  );
+}
+
+// Enhanced header component with user info
+const AppHeader: React.FC<{ 
+  isMobileSidebarOpen: boolean;

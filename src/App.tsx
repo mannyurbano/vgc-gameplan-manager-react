@@ -27,6 +27,17 @@ interface FileSystemWritableFileStream extends WritableStream {
   truncate(size: number): Promise<void>;
 }
 
+interface Replay {
+  id: string;
+  url: string;
+  matchup: string;
+  gameplanNumber?: number; // 1, 2, 3, etc. for specific gameplans
+  dateAdded: string;
+  description?: string;
+  result?: 'win' | 'loss' | 'draw';
+  tags?: string[]; // For additional categorization
+}
+
 interface Gameplan {
   id: string;
   title: string;
@@ -52,6 +63,12 @@ interface Gameplan {
     type: 'json' | 'markdown';
     lastModified?: number;
     handle?: FileSystemFileHandle; // For File System Access API
+  };
+  // New structured replay system
+  replays?: {
+    [matchupKey: string]: {
+      [gameplanNumber: string]: Replay[];
+    };
   };
 }
 
@@ -1406,12 +1423,388 @@ const PokemonSprite: React.FC<{
   );
 };
 
+// New Replay Management Component
+const ReplayManager: React.FC<{ 
+  gameplan: Gameplan;
+  selectedMatchup: string;
+  selectedGameplanNumber?: number;
+  onReplayAdded: (replay: Replay) => void;
+  onReplayDeleted: (replayId: string) => void;
+}> = ({ gameplan, selectedMatchup, selectedGameplanNumber, onReplayAdded, onReplayDeleted }) => {
+
+  // Get replays for the current matchup and gameplan
+  const getReplaysForCurrentContext = (): Replay[] => {
+    const matchupReplays = gameplan.replays?.[selectedMatchup];
+    const replays: Replay[] = [];
+    
+    // Get manually added replays from the app
+    if (matchupReplays) {
+      if (selectedGameplanNumber) {
+        // Show replays for specific gameplan
+        const gameplanReplays = matchupReplays[selectedGameplanNumber.toString()] || [];
+        replays.push(...gameplanReplays);
+      } else {
+        // Show all replays for this matchup
+        Object.entries(matchupReplays).forEach(([gameplanKey, gameplanReplays]) => {
+          gameplanReplays.forEach(replay => {
+            replays.push({
+              ...replay,
+              gameplanNumber: gameplanKey === 'general' ? undefined : parseInt(gameplanKey)
+            });
+          });
+        });
+      }
+    }
+    
+    // Get replays from markdown file
+    const extractReplaysFromMarkdown = (content: string, matchup: string) => {
+      const lines = content.split('\n');
+      const markdownReplays: Replay[] = [];
+      
+      let inReplaysSection = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if we're entering the replays section
+        if (line === '## Replays') {
+          inReplaysSection = true;
+          continue;
+        }
+        
+        // Exit replays section if we hit another major section
+        if (inReplaysSection && line.startsWith('## ') && line !== '## Replays') {
+          inReplaysSection = false;
+          break;
+        }
+        
+        // Look for matchup-specific replay sections
+        if (inReplaysSection && line.startsWith('### ') && line.toLowerCase().includes(matchup.toLowerCase())) {
+          let j = i + 1;
+          while (j < lines.length) {
+            const nextLine = lines[j].trim();
+            
+            // Stop if we hit another section
+            if (nextLine.startsWith('### ') || nextLine.startsWith('## ')) {
+              break;
+            }
+            
+            // Look for replay entries in the format: - [Result] URL - Notes
+            const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
+            if (replayMatch) {
+              const [, result, url, notes] = replayMatch;
+              const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                                   !url.includes('replay.pokemonshowdown.com');
+              
+              // Try to extract gameplan number from the notes
+              let gameplanNumber: number | undefined;
+              if (notes.toLowerCase().includes('gameplan 1') || notes.toLowerCase().includes('gp1')) {
+                gameplanNumber = 1;
+              } else if (notes.toLowerCase().includes('gameplan 2') || notes.toLowerCase().includes('gp2')) {
+                gameplanNumber = 2;
+              } else if (notes.toLowerCase().includes('gameplan 3') || notes.toLowerCase().includes('gp3')) {
+                gameplanNumber = 3;
+              }
+              
+              // Only include if it matches the selected gameplan (if one is selected)
+              if (!selectedGameplanNumber || gameplanNumber === selectedGameplanNumber || !gameplanNumber) {
+                markdownReplays.push({
+                  id: `markdown-${matchup}-${j}`,
+                  url,
+                  matchup,
+                  gameplanNumber,
+                  dateAdded: new Date().toISOString(),
+                  description: notes.trim(),
+                  result: result.toLowerCase() as 'win' | 'loss' | 'draw'
+                });
+              }
+            }
+            
+            j++;
+          }
+        }
+      }
+      
+      return markdownReplays;
+    };
+    
+    const markdownReplays = extractReplaysFromMarkdown(gameplan.content, selectedMatchup);
+    replays.push(...markdownReplays);
+    
+    return replays;
+  };
+  
+  const currentReplays = getReplaysForCurrentContext();
+
+  return (
+    <div className="replay-manager">
+      <div className="replay-header">
+        <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 8, fontSize: '13px' }}>
+          🎮 Replays
+        </h5>
+      </div>
+
+      <div className="replays-list">
+        {currentReplays.length === 0 ? (
+          <div style={{ 
+            color: 'rgba(255,255,255,0.6)', 
+            fontStyle: 'italic', 
+            textAlign: 'center',
+            padding: '0.5rem',
+            fontSize: '11px'
+          }}>
+            No replays found
+          </div>
+        ) : (
+          currentReplays.map((replay: Replay) => (
+            <div key={replay.id} className="replay-item" style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '6px',
+              padding: '0.5rem',
+              marginBottom: '0.4rem'
+            }}>
+              <div className="replay-info">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem', flexWrap: 'wrap' }}>
+                  <a
+                    href={replay.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#60a5fa', textDecoration: 'none', fontWeight: 500, fontSize: '11px' }}
+                  >
+                    📺 View
+                  </a>
+                  <span style={{
+                    padding: '0.2rem 0.4rem',
+                    borderRadius: '3px',
+                    fontSize: '0.7rem',
+                    fontWeight: 500,
+                    background: replay.result === 'win' ? 'rgba(34, 197, 94, 0.2)' : 
+                               replay.result === 'loss' ? 'rgba(239, 68, 68, 0.2)' : 
+                               'rgba(245, 158, 11, 0.2)',
+                    color: replay.result === 'win' ? '#22c55e' : 
+                           replay.result === 'loss' ? '#ef4444' : '#f59e0b'
+                  }}>
+                    {(replay.result || 'win').toUpperCase()}
+                  </span>
+                  {replay.gameplanNumber && (
+                    <span style={{
+                      padding: '0.2rem 0.4rem',
+                      borderRadius: '3px',
+                      fontSize: '0.7rem',
+                      fontWeight: 500,
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6'
+                    }}>
+                      GP{replay.gameplanNumber}
+                    </span>
+                  )}
+                  {replay.id.startsWith('markdown-') && (
+                    <span style={{
+                      padding: '0.2rem 0.4rem',
+                      borderRadius: '3px',
+                      fontSize: '0.7rem',
+                      fontWeight: 500,
+                      background: 'rgba(139, 92, 246, 0.2)',
+                      color: '#8b5cf6'
+                    }}>
+                      FILE
+                    </span>
+                  )}
+                </div>
+                {replay.description && (
+                  <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '10px', marginBottom: '0.2rem', lineHeight: '1.2' }}>
+                    {replay.description.length > 60 ? replay.description.substring(0, 60) + '...' : replay.description}
+                  </div>
+                )}
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '9px' }}>
+                  {new Date(replay.dateAdded).toLocaleDateString()}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Component for dropdown sprites that can load from pokepaste
+const DropdownPokemonSprites: React.FC<{ 
+  matchupKey: string; 
+  gameplanContent: string;
+  size?: number;
+}> = ({ matchupKey, gameplanContent, size = 24 }) => {
+  const [pokepasteData, setPokepasteData] = useState<OpponentTeamData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fallbackPokemon, setFallbackPokemon] = useState<string[]>([]);
+
+  useEffect(() => {
+    const extractPokepasteUrl = (content: string, matchup: string): string | null => {
+      const lines = content.split('\n');
+      let inMatchupSection = false;
+      let foundMatchupSection = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if we're entering the matchup section
+        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
+          inMatchupSection = true;
+          foundMatchupSection = true;
+          continue;
+        }
+        
+        // Check if we're leaving the matchup section
+        if (foundMatchupSection && inMatchupSection && 
+            (line.startsWith('###') || line.startsWith('##')) && 
+            !line.toLowerCase().includes(matchup.toLowerCase())) {
+          break;
+        }
+        
+        // Look for Pokepaste links only within the correct matchup section
+        if (inMatchupSection) {
+          // First try to match markdown link format: [Pokepaste](https://pokepast.es/...)
+          const markdownMatch = line.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-f0-9-]+)\)/i);
+          if (markdownMatch) {
+            return markdownMatch[1];
+          }
+          // Fallback to direct URL format
+          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9-]+/i);
+          if (pokepasteMatch) {
+            return pokepasteMatch[0];
+          }
+        }
+      }
+      
+      return null;
+    };
+
+    const extractFallbackPokemon = (content: string, matchup: string): string[] => {
+      const lines = content.split('\n');
+      let inMatchupSection = false;
+      const allPokemon: string[] = [];
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if we're entering the matchup section
+        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
+          inMatchupSection = true;
+          continue;
+        }
+        
+        // Check if we're leaving the matchup section
+        if (inMatchupSection && 
+            (line.startsWith('###') || line.startsWith('##')) && 
+            !line.toLowerCase().includes(matchup.toLowerCase())) {
+          break;
+        }
+        
+        if (inMatchupSection) {
+          // Extract Pokemon from various patterns in the matchup section
+          const pokemonPatterns = [
+            /^[-*]\s*([A-Za-z][A-Za-z0-9-]*(?:-[A-Za-z][A-Za-z0-9-]*)?)\s*@/, // Pokemon @ Item
+            /^[-*]\s*([A-Za-z][A-Za-z0-9-]*(?:-[A-Za-z][A-Za-z0-9-]*)?)$/, // Pokemon only
+            /\b([A-Za-z][A-Za-z0-9-]*(?:-[A-Za-z][A-Za-z0-9-]*)?)\s*@/g, // Pokemon @ Item in text
+            /\b([A-Za-z][A-Za-z0-9-]*(?:-[A-Za-z][A-Za-z0-9-]*)?)\b/g // Any Pokemon name
+          ];
+          
+          for (const pattern of pokemonPatterns) {
+            const matches = line.match(pattern);
+            if (matches) {
+              matches.forEach(match => {
+                const pokemonName = match.replace(/@.*$/, '').trim();
+                if (pokemonName && POKEMON_ID_MAP[pokemonName] || 
+                    Object.keys(POKEMON_ID_MAP).some(p => p.toLowerCase() === pokemonName.toLowerCase())) {
+                  const correctName = Object.keys(POKEMON_ID_MAP).find(p => 
+                    p.toLowerCase() === pokemonName.toLowerCase()) || pokemonName;
+                  allPokemon.push(correctName);
+                }
+              });
+            }
+          }
+        }
+      }
+      
+      return Array.from(new Set(allPokemon));
+    };
+
+    const loadPokepasteData = async () => {
+      const url = extractPokepasteUrl(gameplanContent, matchupKey);
+      if (!url) {
+        // No pokepaste URL found, use fallback extraction
+        const fallback = extractFallbackPokemon(gameplanContent, matchupKey);
+        setFallbackPokemon(fallback);
+        return;
+      }
+
+      setLoading(true);
+      
+      try {
+        const data = await fetchPokepasteData(url);
+        if (data && data.pokemon.length > 0) {
+          setPokepasteData(data);
+        } else {
+          // Fallback to manual extraction if pokepaste fails
+          const fallback = extractFallbackPokemon(gameplanContent, matchupKey);
+          setFallbackPokemon(fallback);
+        }
+      } catch (err) {
+        console.error('Error loading pokepaste data for dropdown:', err);
+        // Fallback to manual extraction
+        const fallback = extractFallbackPokemon(gameplanContent, matchupKey);
+        setFallbackPokemon(fallback);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPokepasteData();
+  }, [matchupKey, gameplanContent]);
+
+  if (loading) {
+    return (
+      <div className="matchup-pokemon">
+        <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Loading...</span>
+      </div>
+    );
+  }
+
+  const pokemonToShow = pokepasteData ? 
+    pokepasteData.pokemon.map(p => p.name) : 
+    fallbackPokemon;
+
+  return (
+    <div className="matchup-pokemon">
+      {pokemonToShow.slice(0, 6).map(pokemon => (
+        <PokemonSprite 
+          key={pokemon} 
+          pokemon={pokemon} 
+          size={size} 
+          className="matchup-pokemon-sprite"
+        />
+      ))}
+      {pokemonToShow.length > 6 && (
+        <span className="pokemon-more">+{pokemonToShow.length - 6}</span>
+      )}
+    </div>
+  );
+};
+
 // Matchup Selector Component
-const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
+const MatchupSelector: React.FC<{ 
+  gameplan: Gameplan;
+  onReplayAdded?: (replay: Replay) => void;
+  onReplayDeleted?: (replayId: string) => void;
+}> = ({ gameplan, onReplayAdded, onReplayDeleted }) => {
   const [selectedMatchup, setSelectedMatchup] = useState<string>('');
   const [selectedPokemonForCalcs, setSelectedPokemonForCalcs] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [replayCarouselStates, setReplayCarouselStates] = useState<{ [key: string]: number }>({});
   
 
 
@@ -1645,11 +2038,25 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                 
                 // Extract First 3 Turns
                 if (gameplanLine.includes('**First 3 Turns:**')) {
-                  for (let l = k + 1; l < lines.length && l < k + 6; l++) {
+                  for (let l = k + 1; l < lines.length && l < k + 20; l++) {
                     const turnLine = lines[l].trim();
                     if (turnLine.startsWith('-') && turnLine.includes('Turn')) {
                       currentGameplan.first3Turns!.push(turnLine.replace(/^-\s*/, ''));
-                    } else if (turnLine.startsWith('**') || turnLine === '') {
+                    } else if (turnLine.startsWith('**Replay Examples:**')) {
+                      // Include replay examples in the first3Turns array
+                      for (let m = l + 1; m < lines.length && m < l + 15; m++) {
+                        const replayLine = lines[m].trim();
+                        if (replayLine.startsWith('-') && replayLine.includes('**Replay:**')) {
+                          currentGameplan.first3Turns!.push(replayLine.replace(/^-\s*/, ''));
+                        } else if (replayLine.startsWith('**Result:**') || replayLine.startsWith('**Notes:**')) {
+                          // Include result and notes lines
+                          currentGameplan.first3Turns!.push(replayLine);
+                        } else if (replayLine.startsWith('**') && !replayLine.includes('Replay') && !replayLine.includes('Result') && !replayLine.includes('Notes')) {
+                          break;
+                        }
+                      }
+                      break;
+                    } else if (turnLine.startsWith('**') && !turnLine.includes('Replay')) {
                       break;
                     }
                   }
@@ -1839,6 +2246,31 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
         if (line.startsWith('- Turn ')) {
           current.first3Turns.push(line.replace(/^-\s*/, ''));
         }
+        // Also include replay examples that come after First 3 Turns
+        if (line.includes('**Replay Examples:**') || line.includes('**Replay Examples-G1:**') || line.includes('**Replay Examples-G2:**') || line.includes('**Replay Examples-G3:**')) {
+          current.first3Turns.push(line);
+          // Include the replay content that follows
+          let j = i + 1;
+          while (j < lines.length) {
+            const nextLine = lines[j].trim();
+            // Stop if we hit another section or gameplan
+            if (nextLine.startsWith('###') || nextLine.startsWith('##') || 
+                nextLine.startsWith('**Damage Calculations:**') || nextLine.startsWith('**Notes:**')) {
+              break;
+            }
+            // Include replay lines (starting with - or **, or indented lines)
+            if (nextLine.startsWith('-') || nextLine.startsWith('**') || nextLine.trim().startsWith('**')) {
+              current.first3Turns.push(nextLine);
+            } else if (nextLine === '') {
+              // Include empty lines for formatting
+              current.first3Turns.push(nextLine);
+            } else {
+              // Stop if we hit a non-replay line
+              break;
+            }
+            j++;
+          }
+        }
       }
       // End of section
       if (inMatchup && (line.startsWith('### ') || line.startsWith('## ')) && !line.toLowerCase().includes('gameplan') && !line.toLowerCase().includes('vs ')) {
@@ -1878,63 +2310,135 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
   // --- Extract Replay URLs for a specific matchup ---
   const extractReplaysForMatchup = (content: string, matchup: string) => {
     const lines = content.split('\n');
-    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean}> = [];
+    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean, result?: string, gameplanNumber?: number}> = [];
+    console.log(`Extracting replays for matchup: ${matchup}`);
     
-    // Look for replay examples section first
-    let inReplaySection = false;
-    let inMatchupSpecificReplay = false;
+    // Look for the new replay format: ## Replays section
+    let inReplaysSection = false;
+    let currentGameplanNumber = 0;
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
-      // Check if we're in the "## Replay Examples" section
-      if (/^##\s*Replay\s*Examples/i.test(line)) {
-        inReplaySection = true;
+      // Check if we're entering the replays section
+      if (line === '## Replays') {
+        inReplaysSection = true;
         continue;
       }
       
-      // Exit replay section if we hit another major section
-      if (inReplaySection && /^##\s/.test(line) && !/^##\s*Replay\s*Examples/i.test(line)) {
+      // Exit replays section if we hit another major section
+      if (inReplaysSection && line.startsWith('## ') && line !== '## Replays') {
+        inReplaysSection = false;
         break;
       }
       
-      // Check if this replay section is for our specific matchup
-      if (inReplaySection && (line.startsWith('### vs ') || line.startsWith('## vs '))) {
-        const replayMatchupName = line.replace(/^#+\s*vs\s*/i, '').trim();
-        inMatchupSpecificReplay = replayMatchupName.toLowerCase().includes(matchup.toLowerCase()) ||
-                                  matchup.toLowerCase().includes(replayMatchupName.toLowerCase());
-        continue;
-      }
-      
-      // Extract replay URLs
-      if ((inReplaySection && inMatchupSpecificReplay) || 
-          (inReplaySection && matchup === '' && line.includes('**Replay:**'))) {
+      // Look for matchup-specific replay sections
+      if (inReplaysSection && line.startsWith('### ') && line.toLowerCase().includes(matchup.toLowerCase())) {
+        console.log(`Found replay section for matchup: ${line}`);
         
-        const replayMatch = line.match(/\*\*Replay:\*\*\s*(.+)/i);
-        if (replayMatch) {
-          const url = replayMatch[1].trim();
-          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                               !url.includes('replay.pokemonshowdown.com');
+        // Extract replays from this matchup section
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j].trim();
           
-          // Look for notes on the next line
-          let notes = '';
-          if (i + 1 < lines.length) {
-            const nextLine = lines[i + 1].trim();
-            if (nextLine.startsWith('**Notes:**')) {
-              notes = nextLine.replace('**Notes:**', '').trim();
-            }
+          // Stop if we hit another section
+          if (nextLine.startsWith('### ') || nextLine.startsWith('## ')) {
+            break;
           }
           
-          replays.push({
-            url,
-            notes: notes || undefined,
-            isPlaceholder
-          });
+          // Look for replay entries in the format: - [Result] URL - Notes
+          const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
+          if (replayMatch) {
+            const [, result, url, notes] = replayMatch;
+            const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                                 !url.includes('replay.pokemonshowdown.com');
+            
+            // Try to extract gameplan number from the notes or context
+            let gameplanNumber: number | undefined;
+            if (notes.toLowerCase().includes('gameplan 1') || notes.toLowerCase().includes('gp1')) {
+              gameplanNumber = 1;
+            } else if (notes.toLowerCase().includes('gameplan 2') || notes.toLowerCase().includes('gp2')) {
+              gameplanNumber = 2;
+            } else if (notes.toLowerCase().includes('gameplan 3') || notes.toLowerCase().includes('gp3')) {
+              gameplanNumber = 3;
+            }
+            
+            const replayData = {
+              url,
+              notes: notes.trim(),
+              result: result.toLowerCase(),
+              isPlaceholder,
+              gameplanNumber
+            };
+            console.log(`Adding replay from markdown:`, replayData);
+            replays.push(replayData);
+          }
+          
+          j++;
         }
       }
     }
     
-    // If we didn't find matchup-specific replays, look for any replay URLs in the entire content
+    // If we didn't find any replays in the new format, try the old format as fallback
+    if (replays.length === 0) {
+      console.log(`No replays found in new format for ${matchup}, trying old format...`);
+      
+      // Look for all replay URLs in the content that match the matchup
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if we're in a section that matches our matchup
+        const isInMatchupSection = line.toLowerCase().includes(matchup.toLowerCase()) ||
+                                  (line.startsWith('###') && line.toLowerCase().includes(matchup.toLowerCase())) ||
+                                  (line.startsWith('##') && line.toLowerCase().includes(matchup.toLowerCase()));
+        
+        // Extract replay URL
+        const replayMatch = line.match(/\*\*Replay:\*\*\s*(.+)/i);
+        if (replayMatch) {
+          console.log(`Found replay URL: ${replayMatch[1]}`);
+          const url = replayMatch[1].trim();
+          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                               !url.includes('replay.pokemonshowdown.com');
+          
+          // Look for result and notes on subsequent lines
+          let result = '';
+          let notes = '';
+          let j = i + 1;
+          
+          while (j < lines.length && j < i + 10) { // Look up to 10 lines ahead
+            const lookAheadLine = lines[j].trim();
+            
+            // Stop if we hit another replay or major section
+            if (lookAheadLine.startsWith('**Replay:**') || 
+                lookAheadLine.startsWith('###') || 
+                lookAheadLine.startsWith('##') ||
+                lookAheadLine.startsWith('**Damage Calculations:**') ||
+                lookAheadLine.startsWith('- **Replay:**')) {
+              break;
+            }
+            
+            if (lookAheadLine.startsWith('**Result:**')) {
+              result = lookAheadLine.replace('**Result:**', '').trim();
+            } else if (lookAheadLine.startsWith('**Notes:**')) {
+              notes = lookAheadLine.replace('**Notes:**', '').trim();
+            }
+            
+            j++;
+          }
+          
+          const replayData = {
+            url,
+            notes: notes || undefined,
+            result: result || undefined,
+            isPlaceholder
+          };
+          console.log(`Adding replay to array:`, replayData);
+          replays.push(replayData);
+        }
+      }
+    }
+    
+    // If we still didn't find any replays, look for any replay URLs in the entire content
     if (replays.length === 0) {
       const allReplayMatches = content.match(/https:\/\/replay\.pokemonshowdown\.com\/[^\s\n\r]*/g);
       if (allReplayMatches) {
@@ -1948,10 +2452,202 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
       }
     }
     
+    // Limit to 10 replays and return
+    return replays.slice(0, 10);
+  };
+
+  const extractReplaysForGameplan = (content: string, matchup: string, gameplanNumber: number) => {
+    const lines = content.split('\n');
+    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean, result?: string}> = [];
+    console.log(`Extracting replays for gameplan ${gameplanNumber} of matchup: ${matchup}`);
+    
+    let inMatchupSection = false;
+    let inTargetGameplan = false;
+    let currentGameplanNumber = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Check if we're entering the matchup section
+      if (line.startsWith('### vs ') && line.toLowerCase().includes(matchup.toLowerCase())) {
+        inMatchupSection = true;
+        currentGameplanNumber = 0;
+        console.log(`Entering matchup section: ${line}`);
+        continue;
+      }
+      
+      // Exit matchup section if we hit another major matchup section
+      if (inMatchupSection && line.startsWith('### vs ') && !line.toLowerCase().includes(matchup.toLowerCase())) {
+        inMatchupSection = false;
+        inTargetGameplan = false;
+        console.log(`Exiting matchup section: ${line}`);
+        continue;
+      }
+      
+      // Check if we're entering a gameplan section within our matchup
+      if (inMatchupSection && line.startsWith('### Gameplan') && line.includes('vs')) {
+        currentGameplanNumber++;
+        inTargetGameplan = (currentGameplanNumber === gameplanNumber);
+        console.log(`Gameplan ${currentGameplanNumber}, target: ${gameplanNumber}, inTarget: ${inTargetGameplan}`);
+        continue;
+      }
+      
+      // Exit gameplan section if we hit another major section (## )
+      if (inTargetGameplan && line.startsWith('## ')) {
+        inTargetGameplan = false;
+        continue;
+      }
+      
+      // Look for "Replay Examples:" or "Replay Examples-G1/G2/G3:" within the target gameplan section
+      if (inTargetGameplan && (line.includes('**Replay Examples:**') || line.includes('**Replay Examples-G1:**') || line.includes('**Replay Examples-G2:**') || line.includes('**Replay Examples-G3:**'))) {
+        console.log(`Found replay examples in target gameplan section: ${line}`);
+        
+        // Extract replays from this section
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j].trim();
+          
+          // Stop if we hit another section or gameplan
+          if (nextLine.startsWith('###') || nextLine.startsWith('##') || 
+              nextLine.startsWith('**Damage Calculations:**') || nextLine.startsWith('**Notes:**')) {
+            break;
+          }
+          
+          // Extract replay URL
+          const replayMatch = nextLine.match(/\*\*Replay:\*\*\s*(.+)/i);
+          if (replayMatch) {
+            console.log(`Found replay URL: ${replayMatch[1]}`);
+            const url = replayMatch[1].trim();
+            const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                                 !url.includes('replay.pokemonshowdown.com');
+            
+            // Look for result and notes on subsequent lines
+            let result = '';
+            let notes = '';
+            let k = j + 1;
+            
+            while (k < lines.length && k < j + 10) { // Look up to 10 lines ahead
+              const lookAheadLine = lines[k].trim();
+              
+              // Stop if we hit another replay or section
+              if (lookAheadLine.startsWith('**Replay:**') || 
+                  lookAheadLine.startsWith('###') || 
+                  lookAheadLine.startsWith('##') ||
+                  lookAheadLine.startsWith('**Damage Calculations:**') ||
+                  lookAheadLine.startsWith('- **Replay:**')) {
+                break;
+              }
+              
+              if (lookAheadLine.startsWith('**Result:**')) {
+                result = lookAheadLine.replace('**Result:**', '').trim();
+              } else if (lookAheadLine.startsWith('**Notes:**')) {
+                notes = lookAheadLine.replace('**Notes:**', '').trim();
+              }
+              
+              k++;
+            }
+            
+            const replayData = {
+              url,
+              notes: notes || undefined,
+              result: result || undefined,
+              isPlaceholder
+            };
+            console.log(`Adding replay to array:`, replayData);
+            replays.push(replayData);
+          }
+          
+          j++;
+        }
+      }
+    }
+    
+    // If we didn't find any replays, try a simpler approach - extract all replays from the matchup section
+    if (replays.length === 0) {
+      console.log(`No replays found with gameplan-specific extraction, trying general matchup extraction`);
+      let inMatchup = false;
+      let gameplanCount = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Find the matchup section
+        if (line.startsWith('### vs ') && line.toLowerCase().includes(matchup.toLowerCase())) {
+          inMatchup = true;
+          gameplanCount = 0;
+          continue;
+        }
+        
+        // Exit matchup section
+        if (inMatchup && line.startsWith('### vs ') && !line.toLowerCase().includes(matchup.toLowerCase())) {
+          break;
+        }
+        
+        // Count gameplans in this matchup
+        if (inMatchup && line.startsWith('### Gameplan')) {
+          gameplanCount++;
+          if (gameplanCount === gameplanNumber) {
+            // Extract replays from this gameplan
+            let j = i + 1;
+            while (j < lines.length) {
+              const nextLine = lines[j].trim();
+              
+              // Stop if we hit another gameplan or section
+              if (nextLine.startsWith('### Gameplan') || nextLine.startsWith('### vs ') || 
+                  nextLine.startsWith('## ')) {
+                break;
+              }
+              
+              // Extract replay URL
+              const replayMatch = nextLine.match(/\*\*Replay:\*\*\s*(.+)/i);
+              if (replayMatch) {
+                const url = replayMatch[1].trim();
+                const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                                     !url.includes('replay.pokemonshowdown.com');
+                
+                // Look for result and notes on subsequent lines
+                let result = '';
+                let notes = '';
+                let k = j + 1;
+                
+                while (k < lines.length && k < j + 10) {
+                  const lookAheadLine = lines[k].trim();
+                  
+                  if (lookAheadLine.startsWith('**Replay:**') || 
+                      lookAheadLine.startsWith('###') || 
+                      lookAheadLine.startsWith('##')) {
+                    break;
+                  }
+                  
+                  if (lookAheadLine.startsWith('**Result:**')) {
+                    result = lookAheadLine.replace('**Result:**', '').trim();
+                  } else if (lookAheadLine.startsWith('**Notes:**')) {
+                    notes = lookAheadLine.replace('**Notes:**', '').trim();
+                  }
+                  
+                  k++;
+                }
+                
+                replays.push({
+                  url,
+                  notes: notes || undefined,
+                  result: result || undefined,
+                  isPlaceholder
+                });
+              }
+              
+              j++;
+            }
+            break;
+          }
+        }
+      }
+    }
+    
     return replays;
   };
 
-  // Filter matchups based on search term
+  // Filter matchups based on search term - now uses pokepaste data when available
   const getMatchupPokemon = (matchupKey: string) => {
     const matchup = matchups[matchupKey];
     const allPokemon: string[] = [];
@@ -1993,6 +2689,9 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
     );
   });
 
+  const safeOnReplayAdded = onReplayAdded || (() => {});
+  const safeOnReplayDeleted = onReplayDeleted || (() => {});
+
   return (
     <div className="matchup-selector">
       <h4>🎯 Interactive Matchup Guide</h4>
@@ -2024,7 +2723,6 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                 <div className="no-results-item">No matchups found</div>
               ) : (
                 filteredMatchups.map(matchup => {
-                  const matchupPokemon = getMatchupPokemon(matchup);
                   return (
                     <div
                       key={matchup}
@@ -2037,19 +2735,11 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                     >
                       <div className="matchup-info">
                         <div className="matchup-name">{matchup}</div>
-                        <div className="matchup-pokemon">
-                          {matchupPokemon.slice(0, 6).map(pokemon => (
-                            <PokemonSprite 
-                              key={pokemon} 
-                              pokemon={pokemon} 
-                              size={24} 
-                              className="matchup-pokemon-sprite"
-                            />
-                          ))}
-                          {matchupPokemon.length > 6 && (
-                            <span className="pokemon-more">+{matchupPokemon.length - 6}</span>
-                          )}
-                        </div>
+                        <DropdownPokemonSprites 
+                          matchupKey={matchup}
+                          gameplanContent={gameplan.content}
+                          size={24}
+                        />
                       </div>
                     </div>
                   );
@@ -2066,8 +2756,8 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
               <h5>vs {selectedMatchup}</h5>
             </div>
             <div className="matchup-recommendation">
-              {/* Rival's Team */}
-              <div className="opponent-team-section">
+              {/* Rival's Team - Compact Layout */}
+              <div className="opponent-team-section" style={{ marginBottom: 16 }}>
                 {/* Auto-fetched Pokepaste Data */}
                 <PokepasteTeamDisplay 
                   content={gameplan.content} 
@@ -2077,20 +2767,17 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                 {/* Fallback to Manual Team Data */}
                 {matchups[selectedMatchup].opponentTeam && matchups[selectedMatchup].opponentTeam!.length > 0 && (
                   <div>
-                    <strong>👥 Rival's Team:</strong>
-                    <div className="opponent-team-display">
+                    <strong style={{ fontSize: '14px', color: '#f87171' }}>👥 Rival's Team:</strong>
+                    <div className="opponent-team-display" style={{ marginTop: 8 }}>
                       {(() => {
                         try {
                           const opponentTeamWithItems = extractOpponentTeamWithItems(gameplan.content, selectedMatchup);
-                          console.log(`extractOpponentTeamWithItems result:`, opponentTeamWithItems);
-                          console.log(`matchups[selectedMatchup].opponentTeam:`, matchups[selectedMatchup]?.opponentTeam);
                           if (opponentTeamWithItems && opponentTeamWithItems.length > 0) {
-                            console.log(`Using extractOpponentTeamWithItems data`);
                             return opponentTeamWithItems.map((teamMember, index) => (
                               <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
                                 <PokemonSprite 
                                   pokemon={teamMember.pokemon} 
-                                  size={56}
+                                  size={48}
                                   heldItem={teamMember.item}
                                   showItem={true}
                                 />
@@ -2098,22 +2785,17 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                               </div>
                             ));
                           } else if (matchups[selectedMatchup] && matchups[selectedMatchup].opponentTeam) {
-                            console.log(`Using fallback matchups data`);
-                            console.log(`Opponent team members:`, matchups[selectedMatchup].opponentTeam);
-                            return matchups[selectedMatchup].opponentTeam!.map((teamMember, index) => {
-                              console.log(`Rendering opponent team member: ${teamMember.pokemon} @ ${teamMember.item}`);
-                              return (
-                                <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
-                                  <PokemonSprite 
-                                    pokemon={teamMember.pokemon} 
-                                    size={56}
-                                    heldItem={teamMember.item}
-                                    showItem={true}
-                                  />
-                                  <span className="opponent-team-name">{teamMember.pokemon}</span>
-                                </div>
-                              );
-                            });
+                            return matchups[selectedMatchup].opponentTeam!.map((teamMember, index) => (
+                              <div key={`${teamMember.pokemon}-${index}`} className="opponent-team-item">
+                                <PokemonSprite 
+                                  pokemon={teamMember.pokemon} 
+                                  size={48}
+                                  heldItem={teamMember.item}
+                                  showItem={true}
+                                />
+                                <span className="opponent-team-name">{teamMember.pokemon}</span>
+                              </div>
+                            ));
                           } else {
                             return <div>No opponent team data</div>;
                           }
@@ -2126,151 +2808,26 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                   </div>
                 )}
                   
-                  {matchups[selectedMatchup].pokepasteUrl && (
-                    <a 
-                      href={matchups[selectedMatchup].pokepasteUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="pokepaste-link"
-                      style={{ marginTop: 12, display: 'inline-block' }}
-                    >
-                      📋 Pokepaste
-                    </a>
-                  )}
-                </div>
+                {matchups[selectedMatchup].pokepasteUrl && (
+                  <a 
+                    href={matchups[selectedMatchup].pokepasteUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="pokepaste-link"
+                    style={{ marginTop: 8, display: 'inline-block', fontSize: '12px' }}
+                  >
+                    📋 Pokepaste
+                  </a>
+                )}
+              </div>
 
-                {/* Intelligent Replay Section */}
-                <div style={{ marginTop: 16 }}>
-                  <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 12 }}>
-                    🎮 Replays
-                  </h5>
-                  <div style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                    borderRadius: 8,
-                    padding: 16
-                  }}>
-                    {(() => {
-                      const replays = extractReplaysForMatchup(gameplan.content, selectedMatchup);
-                      
-                      if (replays.length === 0) {
-                        return (
-                          <>
-                            <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 12 }}>
-                              No replays found for this matchup yet
-                            </p>
-                            <a
-                              href="https://replay.pokemonshowdown.com/"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                color: '#60a5fa',
-                                textDecoration: 'none',
-                                fontSize: 14,
-                                fontWeight: 500,
-                                padding: '8px 16px',
-                                background: 'rgba(96, 165, 250, 0.1)',
-                                border: '1px solid rgba(96, 165, 250, 0.3)',
-                                borderRadius: 6,
-                                transition: 'all 0.2s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(96, 165, 250, 0.2)';
-                                e.currentTarget.style.borderColor = '#60a5fa';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)';
-                                e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.3)';
-                              }}
-                            >
-                              🔗 Browse Replays on Showdown
-                            </a>
-                          </>
-                        );
-                      }
-                      
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {replays.map((replay, index) => {
-                            if (replay.isPlaceholder) {
-                              return (
-                                <div key={index} style={{
-                                  padding: 12,
-                                  background: 'rgba(251, 191, 36, 0.1)',
-                                  border: '1px solid rgba(251, 191, 36, 0.3)',
-                                  borderRadius: 6,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 6
-                                }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ color: '#f59e0b', fontSize: 14 }}>⚠️</span>
-                                    <span style={{ color: '#f59e0b', fontSize: 14, fontWeight: 500 }}>
-                                      Placeholder Replay #{index + 1}
-                                    </span>
-                                  </div>
-                                  <p style={{ color: '#92400e', fontSize: 13, margin: 0 }}>
-                                    This is a template replay URL. Replace with actual Pokemon Showdown replay link.
-                                  </p>
-                                  {replay.notes && (
-                                    <p style={{ color: '#78716c', fontSize: 13, margin: 0, fontStyle: 'italic' }}>
-                                      {replay.notes}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            }
-                            
-                            return (
-                              <div key={index} style={{
-                                padding: 12,
-                                background: 'rgba(16, 185, 129, 0.1)',
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                borderRadius: 6,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 6
-                              }}>
-                                <a
-                                  href={replay.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    color: '#10b981',
-                                    textDecoration: 'none',
-                                    fontSize: 14,
-                                    fontWeight: 500,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                  }}
-                                >
-                                  <span>🎥</span>
-                                  <span>Replay #{index + 1}</span>
-                                  <span style={{ color: '#6b7280', fontSize: 12 }}>↗</span>
-                                </a>
-                                {replay.notes && (
-                                  <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
-                                    {replay.notes}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
+
               
               {/* --- New Gameplans Section --- */}
               {gameplansForMatchup.length > 0 && (
                 <div className="gameplans-section">
                   <h5 style={{ marginBottom: 16, color: '#4fd1c5', fontWeight: 700, fontSize: 20 }}>📋 Gameplans</h5>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {gameplansForMatchup.map((gp, idx) => (
                       <div
                         key={idx}
@@ -2278,7 +2835,7 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                         style={{
                           background: 'rgba(255,255,255,0.04)',
                           borderRadius: 12,
-                          padding: 20,
+                          padding: 16,
                           boxShadow: '0 2px 8px 0 rgba(0,0,0,0.10)',
                           border: '1px solid #333',
                           marginBottom: 0,
@@ -2286,24 +2843,24 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                         }}
                       >
                         {/* Team Layout Section */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 16 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
                           {/* My Team */}
-                          <div style={{ flex: 1, minWidth: 200 }}>
-                            <div style={{ fontWeight: 600, color: '#60a5fa', marginBottom: 8, fontSize: '14px' }}>My Team</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                              <div>
-                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 4, fontSize: '12px' }}>Lead</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#60a5fa', marginBottom: 6, fontSize: '13px' }}>My Team</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 3, fontSize: '11px' }}>Lead</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   {extractPokemonFromText(gp.myLead).map(pokemon => (
-                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
                                   ))}
                                 </div>
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 4, fontSize: '12px' }}>Back</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500, color: '#60a5fa', marginBottom: 3, fontSize: '11px' }}>Back</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   {extractPokemonFromText(gp.myBack).map(pokemon => (
-                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
                                   ))}
                                 </div>
                               </div>
@@ -2311,56 +2868,475 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                           </div>
                           
                           {/* Rival's Team */}
-                          <div style={{ flex: 1, minWidth: 200 }}>
-                            <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 8, fontSize: '14px' }}>Rival's Team</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                              <div>
-                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 4, fontSize: '12px' }}>Lead</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#f87171', marginBottom: 6, fontSize: '13px' }}>Rival's Team</div>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 3, fontSize: '11px' }}>Lead</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   {extractPokemonFromText(gp.opponentLead).map(pokemon => (
-                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
                                   ))}
                                 </div>
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 4, fontSize: '12px' }}>Back</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500, color: '#f87171', marginBottom: 3, fontSize: '11px' }}>Back</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   {extractPokemonFromText(gp.opponentBack).map(pokemon => (
-                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={48} />
+                                    <PokemonSprite key={pokemon} pokemon={pokemon} size={56} />
                                   ))}
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
+
+                        {/* Replays Section - Carousel Layout */}
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontWeight: 600, color: '#10b981', marginBottom: 6, fontSize: '13px' }}>🎮 Replays</div>
+                          {(() => {
+                            const replays = (() => {
+                              const matchupReplays = gameplan.replays?.[selectedMatchup];
+                              const replays: Replay[] = [];
+                              
+                              // Get manually added replays from the app
+                              if (matchupReplays) {
+                                if (idx + 1) {
+                                  // Show replays for specific gameplan
+                                  const gameplanReplays = matchupReplays[(idx + 1).toString()] || [];
+                                  replays.push(...gameplanReplays);
+                                } else {
+                                  // Show all replays for this matchup
+                                  Object.entries(matchupReplays).forEach(([gameplanKey, gameplanReplays]) => {
+                                    gameplanReplays.forEach(replay => {
+                                      replays.push({
+                                        ...replay,
+                                        gameplanNumber: gameplanKey === 'general' ? undefined : parseInt(gameplanKey)
+                                      });
+                                    });
+                                  });
+                                }
+                              }
+                              
+                              // Get replays from markdown file
+                              const extractReplaysFromMarkdown = (content: string, matchup: string) => {
+                                const lines = content.split('\n');
+                                const markdownReplays: Replay[] = [];
+                                
+                                let inReplaysSection = false;
+                                
+                                for (let i = 0; i < lines.length; i++) {
+                                  const line = lines[i].trim();
+                                  
+                                  // Check if we're entering the replays section
+                                  if (line === '## Replays') {
+                                    inReplaysSection = true;
+                                    continue;
+                                  }
+                                  
+                                  // Exit replays section if we hit another major section
+                                  if (inReplaysSection && line.startsWith('## ') && line !== '## Replays') {
+                                    inReplaysSection = false;
+                                    break;
+                                  }
+                                  
+                                  // Look for matchup-specific replay sections
+                                  if (inReplaysSection && line.startsWith('### ') && line.toLowerCase().includes(matchup.toLowerCase())) {
+                                    let j = i + 1;
+                                    while (j < lines.length) {
+                                      const nextLine = lines[j].trim();
+                                      
+                                      // Stop if we hit another section
+                                      if (nextLine.startsWith('### ') || nextLine.startsWith('## ')) {
+                                        break;
+                                      }
+                                      
+                                      // Look for replay entries in the format: - [Result] URL - Notes
+                                      const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
+                                      if (replayMatch) {
+                                        const [, result, url, notes] = replayMatch;
+                                        const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
+                                                             !url.includes('replay.pokemonshowdown.com');
+                                        
+                                        // Try to extract gameplan number from the notes
+                                        let gameplanNumber: number | undefined;
+                                        if (notes.toLowerCase().includes('gameplan 1') || notes.toLowerCase().includes('gp1')) {
+                                          gameplanNumber = 1;
+                                        } else if (notes.toLowerCase().includes('gameplan 2') || notes.toLowerCase().includes('gp2')) {
+                                          gameplanNumber = 2;
+                                        } else if (notes.toLowerCase().includes('gameplan 3') || notes.toLowerCase().includes('gp3')) {
+                                          gameplanNumber = 3;
+                                        }
+                                        
+                                        // Only include if it matches the selected gameplan (if one is selected)
+                                        if (!(idx + 1) || gameplanNumber === (idx + 1) || !gameplanNumber) {
+                                          markdownReplays.push({
+                                            id: `markdown-${matchup}-${j}`,
+                                            url,
+                                            matchup,
+                                            gameplanNumber,
+                                            dateAdded: new Date().toISOString(),
+                                            description: notes.trim(),
+                                            result: result.toLowerCase() as 'win' | 'loss' | 'draw'
+                                          });
+                                        }
+                                      }
+                                      
+                                      j++;
+                                    }
+                                  }
+                                }
+                                
+                                return markdownReplays;
+                              };
+                              
+                              const markdownReplays = extractReplaysFromMarkdown(gameplan.content, selectedMatchup);
+                              replays.push(...markdownReplays);
+                              
+                              return replays;
+                            })();
+
+                            if (replays.length === 0) {
+                              return (
+                                <div style={{ 
+                                  color: 'rgba(255,255,255,0.6)', 
+                                  fontStyle: 'italic', 
+                                  textAlign: 'center',
+                                  padding: '1rem',
+                                  fontSize: '11px'
+                                }}>
+                                  No replays found
+                                </div>
+                              );
+                            }
+
+                            // Carousel state - using component-level state
+                            const carouselKey = `${selectedMatchup}-${idx}`;
+                            const currentSlide = replayCarouselStates[carouselKey] || 0;
+                            const slidesToShow = 2; // Show 2 replays at a time
+                            const totalSlides = replays.length;
+                            const maxSlide = Math.max(0, totalSlides - slidesToShow);
+
+                            const nextSlide = () => {
+                              setReplayCarouselStates(prev => ({
+                                ...prev,
+                                [carouselKey]: Math.min((prev[carouselKey] || 0) + 1, maxSlide)
+                              }));
+                            };
+
+                            const prevSlide = () => {
+                              setReplayCarouselStates(prev => ({
+                                ...prev,
+                                [carouselKey]: Math.max((prev[carouselKey] || 0) - 1, 0)
+                              }));
+                            };
+
+                            return (
+                              <div style={{ position: 'relative' }}>
+                                {/* Carousel Container */}
+                                <div style={{ 
+                                  display: 'flex', 
+                                  gap: 12, 
+                                  overflow: 'hidden',
+                                  position: 'relative',
+                                  padding: '0 40px' // Space for navigation buttons
+                                }}>
+                                  <div style={{
+                                    display: 'flex',
+                                    gap: 12,
+                                    transform: `translateX(-${currentSlide * (100 / slidesToShow)}%)`,
+                                    transition: 'transform 0.3s ease-in-out',
+                                    width: `${(100 / slidesToShow) * totalSlides}%`
+                                  }}>
+                                    {replays.map((replay: Replay, index: number) => (
+                                      <div 
+                                        key={replay.id} 
+                                        style={{
+                                          background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+                                          border: '1px solid rgba(255,255,255,0.15)',
+                                          borderRadius: '12px',
+                                          padding: '12px',
+                                          width: `${100 / totalSlides}%`,
+                                          minWidth: '200px',
+                                          flexShrink: 0,
+                                          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                          backdropFilter: 'blur(10px)',
+                                          transition: 'all 0.3s ease',
+                                          cursor: 'pointer'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.transform = 'translateY(-2px)';
+                                          e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.25)';
+                                          e.currentTarget.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.transform = 'translateY(0)';
+                                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.15)';
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                                          <a
+                                            href={replay.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ 
+                                              color: '#60a5fa', 
+                                              textDecoration: 'none', 
+                                              fontWeight: 600, 
+                                              fontSize: '11px',
+                                              padding: '0.3rem 0.6rem',
+                                              background: 'rgba(96, 165, 250, 0.1)',
+                                              borderRadius: '6px',
+                                              transition: 'all 0.2s ease'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              e.currentTarget.style.background = 'rgba(96, 165, 250, 0.2)';
+                                              e.currentTarget.style.transform = 'scale(1.05)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)';
+                                              e.currentTarget.style.transform = 'scale(1)';
+                                            }}
+                                          >
+                                            📺 View
+                                          </a>
+                                          <span style={{
+                                            padding: '0.3rem 0.6rem',
+                                            borderRadius: '6px',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 600,
+                                            background: replay.result === 'win' ? 'rgba(34, 197, 94, 0.2)' : 
+                                                       replay.result === 'loss' ? 'rgba(239, 68, 68, 0.2)' : 
+                                                       'rgba(245, 158, 11, 0.2)',
+                                            color: replay.result === 'win' ? '#22c55e' : 
+                                                   replay.result === 'loss' ? '#ef4444' : '#f59e0b',
+                                            border: `1px solid ${replay.result === 'win' ? 'rgba(34, 197, 94, 0.3)' : 
+                                                              replay.result === 'loss' ? 'rgba(239, 68, 68, 0.3)' : 
+                                                              'rgba(245, 158, 11, 0.3)'}`
+                                          }}>
+                                            {(replay.result || 'win').toUpperCase()}
+                                          </span>
+                                          {replay.gameplanNumber && (
+                                            <span style={{
+                                              padding: '0.3rem 0.6rem',
+                                              borderRadius: '6px',
+                                              fontSize: '0.7rem',
+                                              fontWeight: 600,
+                                              background: 'rgba(59, 130, 246, 0.2)',
+                                              color: '#3b82f6',
+                                              border: '1px solid rgba(59, 130, 246, 0.3)'
+                                            }}>
+                                              GP{replay.gameplanNumber}
+                                            </span>
+                                          )}
+                                          {replay.id.startsWith('markdown-') && (
+                                            <span style={{
+                                              padding: '0.3rem 0.6rem',
+                                              borderRadius: '6px',
+                                              fontSize: '0.7rem',
+                                              fontWeight: 600,
+                                              background: 'rgba(139, 92, 246, 0.2)',
+                                              color: '#8b5cf6',
+                                              border: '1px solid rgba(139, 92, 246, 0.3)'
+                                            }}>
+                                              FILE
+                                            </span>
+                                          )}
+                                        </div>
+                                        {replay.description && (
+                                          <div style={{ 
+                                            color: 'rgba(255,255,255,0.8)', 
+                                            fontSize: '11px', 
+                                            marginBottom: '0.5rem', 
+                                            lineHeight: '1.4',
+                                            fontWeight: 500
+                                          }}>
+                                            {replay.description.length > 300 ? replay.description.substring(0, 300) + '...' : replay.description}
+                                          </div>
+                                        )}
+                                        <div style={{ 
+                                          color: 'rgba(255,255,255,0.6)', 
+                                          fontSize: '10px',
+                                          fontWeight: 500
+                                        }}>
+                                          {new Date(replay.dateAdded).toLocaleDateString()}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Navigation Buttons */}
+                                {totalSlides > slidesToShow && (
+                                  <>
+                                    {/* Previous Button */}
+                                    <button
+                                      onClick={prevSlide}
+                                      disabled={currentSlide === 0}
+                                      style={{
+                                        position: 'absolute',
+                                        left: 0,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        background: currentSlide === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(16, 185, 129, 0.2)',
+                                        border: `1px solid ${currentSlide === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(16, 185, 129, 0.4)'}`,
+                                        borderRadius: '50%',
+                                        width: '32px',
+                                        height: '32px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: currentSlide === 0 ? 'not-allowed' : 'pointer',
+                                        color: currentSlide === 0 ? 'rgba(255,255,255,0.3)' : '#10b981',
+                                        fontSize: '16px',
+                                        transition: 'all 0.2s ease',
+                                        zIndex: 10
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (currentSlide !== 0) {
+                                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.3)';
+                                          e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (currentSlide !== 0) {
+                                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
+                                          e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                                        }
+                                      }}
+                                    >
+                                      ‹
+                                    </button>
+
+                                    {/* Next Button */}
+                                    <button
+                                      onClick={nextSlide}
+                                      disabled={currentSlide >= maxSlide}
+                                      style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        background: currentSlide >= maxSlide ? 'rgba(255,255,255,0.1)' : 'rgba(16, 185, 129, 0.2)',
+                                        border: `1px solid ${currentSlide >= maxSlide ? 'rgba(255,255,255,0.2)' : 'rgba(16, 185, 129, 0.4)'}`,
+                                        borderRadius: '50%',
+                                        width: '32px',
+                                        height: '32px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: currentSlide >= maxSlide ? 'not-allowed' : 'pointer',
+                                        color: currentSlide >= maxSlide ? 'rgba(255,255,255,0.3)' : '#10b981',
+                                        fontSize: '16px',
+                                        transition: 'all 0.2s ease',
+                                        zIndex: 10
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (currentSlide < maxSlide) {
+                                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.3)';
+                                          e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (currentSlide < maxSlide) {
+                                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
+                                          e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                                        }
+                                      }}
+                                    >
+                                      ›
+                                    </button>
+                                  </>
+                                )}
+
+                                {/* Dots Indicator */}
+                                {totalSlides > slidesToShow && (
+                                  <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    marginTop: '12px'
+                                  }}>
+                                                                         {Array.from({ length: maxSlide + 1 }, (_, i) => (
+                                       <button
+                                         key={i}
+                                         onClick={() => setReplayCarouselStates(prev => ({
+                                           ...prev,
+                                           [carouselKey]: i
+                                         }))}
+                                        style={{
+                                          width: '8px',
+                                          height: '8px',
+                                          borderRadius: '50%',
+                                          background: i === currentSlide ? '#10b981' : 'rgba(255,255,255,0.3)',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (i !== currentSlide) {
+                                            e.currentTarget.style.background = 'rgba(16, 185, 129, 0.6)';
+                                            e.currentTarget.style.transform = 'scale(1.2)';
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (i !== currentSlide) {
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.3)';
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                          }
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
                         
-                        {/* Win Conditions Section */}
-                        <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+                        {/* Win Conditions Section - Horizontal Layout */}
+                        <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, color: '#34d399', marginBottom: 4, fontSize: '13px' }}>My Win Condition</div>
-                            <div style={{ fontSize: '12px', lineHeight: '1.4' }}>{gp.myWincon}</div>
+                            <div style={{ fontWeight: 600, color: '#34d399', marginBottom: 3, fontSize: '12px' }}>My Wincon</div>
+                            <div style={{ fontSize: '11px', lineHeight: '1.3', color: '#d1d5db' }}>{gp.myWincon}</div>
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, color: '#fbbf24', marginBottom: 4, fontSize: '13px' }}>Rival's Win Condition</div>
-                            <div style={{ fontSize: '12px', lineHeight: '1.4' }}>{gp.theirWincon}</div>
+                            <div style={{ fontWeight: 600, color: '#fbbf24', marginBottom: 3, fontSize: '12px' }}>Rival's Wincon</div>
+                            <div style={{ fontSize: '11px', lineHeight: '1.3', color: '#d1d5db' }}>{gp.theirWincon}</div>
                           </div>
                         </div>
-                        {/* First 3 Turns */}
-                        <div style={{ marginTop: 16 }}>
-                          <div style={{ fontWeight: 600, color: '#a78bfa', marginBottom: 8, fontSize: '13px' }}>First 3 Turns</div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {gp.first3Turns.map((turn: string, i: number) => (
-                              <div key={i} style={{ 
-                                padding: '8px 12px', 
-                                background: 'rgba(168, 139, 250, 0.1)', 
-                                borderRadius: '6px',
-                                border: '1px solid rgba(168, 139, 250, 0.2)',
-                                fontSize: '12px',
-                                lineHeight: '1.4'
-                              }}>
-                                {turn.replace(/\btheir\b/gi, "rival's")}
-                              </div>
-                            ))}
+
+                        {/* First 3 Turns - Compact Layout */}
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#a78bfa', marginBottom: 6, fontSize: '12px' }}>First 3 Turns</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 6 }}>
+                            {gp.first3Turns.map((turn: string, i: number) => {
+                              // Skip empty lines
+                              if (!turn.trim()) {
+                                return null;
+                              }
+                              
+                              // Skip replay-related content in First 3 Turns
+                              if (turn.includes('**Replay Examples:**') || turn.includes('**Replay Examples-G1:**') || turn.includes('**Replay Examples-G2:**') || turn.includes('**Replay Examples-G3:**') || turn.includes('**Replay:**') || turn.includes('**Result:**') || turn.includes('**Notes:**')) {
+                                return null;
+                              }
+                              
+                              // Regular turn instruction
+                              return (
+                                <div key={i} style={{ 
+                                  padding: '6px 10px', 
+                                  background: 'rgba(168, 139, 250, 0.1)', 
+                                  borderRadius: '6px',
+                                  border: '1px solid rgba(168, 139, 250, 0.2)',
+                                  fontSize: '11px',
+                                  lineHeight: '1.3',
+                                  color: '#e0e0e0'
+                                }}>
+                                  {turn.replace(/\btheir\b/gi, "rival's")}
+                                </div>
+                              );
+                            }).filter(Boolean)}
                           </div>
                         </div>
                       </div>
@@ -2376,15 +3352,15 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                           style={{
                             background: 'rgba(255,255,255,0.04)',
                             borderRadius: 12,
-                            padding: 20,
+                            padding: 16,
                             boxShadow: '0 2px 8px 0 rgba(0,0,0,0.10)',
                             border: '1px solid #333',
                             color: '#e0e0e0',
-                            marginTop: 24,
+                            marginTop: 16,
                           }}
                         >
-                          <h5 style={{ color: '#fbbf24', fontWeight: 700, fontSize: 20, marginBottom: 12 }}>📝 Notes</h5>
-                          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 16 }}>{notes}</pre>
+                          <h5 style={{ color: '#fbbf24', fontWeight: 700, fontSize: 16, marginBottom: 8 }}>📝 Notes</h5>
+                          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14 }}>{notes}</pre>
                         </div>
                       );
                     }
@@ -2434,31 +3410,31 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                   
                   return (
                     <div className="damage-calculations-section">
-                      <h5 style={{ marginBottom: 16, color: '#fbbf24', fontWeight: 700, fontSize: 20 }}>⚔️ Damage Calculations</h5>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <h5 style={{ marginBottom: 12, color: '#fbbf24', fontWeight: 700, fontSize: 16 }}>⚔️ Damage Calculations</h5>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ 
                           display: 'grid', 
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', 
-                          gap: 12,
-                          marginBottom: 16
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))', 
+                          gap: 8,
+                          marginBottom: 12
                         }}>
                           {uniquePokemon.map(pokemon => (
-                            <div
-                              key={pokemon}
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 8,
-                                padding: 12,
-                                background: selectedPokemonForCalcs === pokemon ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.05)',
-                                border: `2px solid ${selectedPokemonForCalcs === pokemon ? '#fbbf24' : '#333'}`,
-                                borderRadius: 8,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                minHeight: 100,
-                                justifyContent: 'center'
-                              }}
+                                                          <div
+                                key={pokemon}
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  padding: 8,
+                                  background: selectedPokemonForCalcs === pokemon ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.05)',
+                                  border: `2px solid ${selectedPokemonForCalcs === pokemon ? '#fbbf24' : '#333'}`,
+                                  borderRadius: 6,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  minHeight: 80,
+                                  justifyContent: 'center'
+                                }}
                               onClick={() => setSelectedPokemonForCalcs(selectedPokemonForCalcs === pokemon ? '' : pokemon)}
                               onMouseEnter={(e) => {
                                 if (selectedPokemonForCalcs !== pokemon) {
@@ -2473,9 +3449,9 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                                 }
                               }}
                             >
-                              <PokemonSprite pokemon={pokemon} size={56} />
+                              <PokemonSprite pokemon={pokemon} size={48} />
                               <div style={{ 
-                                fontSize: 12, 
+                                fontSize: 11, 
                                 color: '#e0e0e0', 
                                 textAlign: 'center',
                                 fontWeight: 500,
@@ -2488,7 +3464,7 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                               </div>
                               {calcsByPokemon[pokemon] && (
                                 <div style={{ 
-                                  fontSize: 10, 
+                                  fontSize: 9, 
                                   color: '#fbbf24',
                                   fontWeight: 600
                                 }}>
@@ -2503,22 +3479,22 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
                           <div style={{
                             background: 'rgba(251, 191, 36, 0.1)',
                             border: '1px solid rgba(251, 191, 36, 0.3)',
-                            borderRadius: 8,
-                            padding: 16
+                            borderRadius: 6,
+                            padding: 12
                           }}>
-                            <h6 style={{ color: '#fbbf24', marginBottom: 12, fontSize: 16 }}>Calculations for {selectedPokemonForCalcs}</h6>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <h6 style={{ color: '#fbbf24', marginBottom: 8, fontSize: 14 }}>Calculations for {selectedPokemonForCalcs}</h6>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {Object.entries(calcsByPokemon[selectedPokemonForCalcs]).map(([calcName, calcContent]) => (
                                 <div key={calcName} style={{
                                   background: 'rgba(0,0,0,0.3)',
                                   border: '1px solid rgba(251, 191, 36, 0.2)',
-                                  borderRadius: 6,
-                                  padding: 12
+                                  borderRadius: 4,
+                                  padding: 8
                                 }}>
-                                  <div style={{ color: '#fbbf24', fontWeight: 600, marginBottom: 4, fontSize: 14 }}>{calcName}</div>
+                                  <div style={{ color: '#fbbf24', fontWeight: 600, marginBottom: 3, fontSize: 12 }}>{calcName}</div>
                                   <pre style={{ 
                                     color: '#e0e0e0', 
-                                    fontSize: 12, 
+                                    fontSize: 11, 
                                     whiteSpace: 'pre-wrap', 
                                     fontFamily: 'inherit',
                                     margin: 0
@@ -2545,7 +3521,11 @@ const MatchupSelector: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
 };
 
 // Cheat Sheet Component
-const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
+const CheatSheet: React.FC<{ 
+  gameplan: Gameplan;
+  onReplayAdded?: (replay: Replay) => void;
+  onReplayDeleted?: (replayId: string) => void;
+}> = ({ gameplan, onReplayAdded, onReplayDeleted }) => {
   const [pokepasteTeamData, setPokepasteTeamData] = useState<string[]>([]);
 
   const extractCheatSheetData = (content: string) => {
@@ -2666,7 +3646,11 @@ const CheatSheet: React.FC<{ gameplan: Gameplan }> = ({ gameplan }) => {
 
 
       {/* Interactive Matchup Selector */}
-      <MatchupSelector gameplan={gameplan} />
+      <MatchupSelector 
+        gameplan={gameplan} 
+        onReplayAdded={onReplayAdded}
+        onReplayDeleted={onReplayDeleted}
+      />
 
       {/* Lead Options */}
       {leads.length > 0 && (
@@ -3261,7 +4245,13 @@ const PokepasteTeamDisplay: React.FC<{
         
         // Look for Pokepaste links only within the correct matchup section
         if (inMatchupSection) {
-          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9]+/i);
+          // First try to match markdown link format: [Pokepaste](https://pokepast.es/...)
+          const markdownMatch = line.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-f0-9-]+)\)/i);
+          if (markdownMatch) {
+            return markdownMatch[1];
+          }
+          // Fallback to direct URL format
+          const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9-]+/i);
           if (pokepasteMatch) {
             return pokepasteMatch[0];
           }
@@ -3474,6 +4464,52 @@ Impish Nature
     tournament: '',
     format: 'VGC'
   });
+
+  // Replay management functions
+  const handleReplayAdded = useCallback((gameplanId: string, replay: Replay) => {
+    setGameplans(prevGameplans => 
+      prevGameplans.map(gameplan => 
+        gameplan.id === gameplanId 
+          ? {
+              ...gameplan,
+              replays: {
+                ...gameplan.replays,
+                [replay.matchup]: {
+                  ...gameplan.replays?.[replay.matchup],
+                  [replay.gameplanNumber || 'general']: [
+                    ...(gameplan.replays?.[replay.matchup]?.[replay.gameplanNumber || 'general'] || []),
+                    replay
+                  ]
+                }
+              }
+            }
+          : gameplan
+      )
+    );
+  }, []);
+
+  const handleReplayDeleted = useCallback((gameplanId: string, replayId: string) => {
+    setGameplans(prevGameplans => 
+      prevGameplans.map(gameplan => 
+        gameplan.id === gameplanId 
+          ? {
+              ...gameplan,
+              replays: Object.fromEntries(
+                Object.entries(gameplan.replays || {}).map(([matchupKey, matchupReplays]) => [
+                  matchupKey,
+                  Object.fromEntries(
+                    Object.entries(matchupReplays).map(([gameplanKey, replays]) => [
+                      gameplanKey,
+                      replays.filter(replay => replay.id !== replayId)
+                    ])
+                  )
+                ])
+              )
+            }
+          : gameplan
+      )
+    );
+  }, []);
 
   // Load data prioritizing local API, then localStorage for all environments
   useEffect(() => {
@@ -4673,7 +5709,11 @@ Impish Nature
                 </div>
 
                 {/* Cheat Sheet */}
-                <CheatSheet gameplan={selectedGameplan} />
+                <CheatSheet 
+                  gameplan={selectedGameplan} 
+                  onReplayAdded={(replay) => handleReplayAdded(selectedGameplan.id, replay)}
+                  onReplayDeleted={(replayId) => handleReplayDeleted(selectedGameplan.id, replayId)}
+                />
               </div>
             </div>
           )}

@@ -2994,7 +2994,6 @@ const PokemonNamesLoader: React.FC<{
   content: string;
   onPokemonNamesLoaded: (pokemon: string[]) => void;
 }> = ({ content, onPokemonNamesLoaded }) => {
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const extractMyTeamPokepasteUrl = (content: string): string | null => {
@@ -3043,8 +3042,6 @@ const PokemonNamesLoader: React.FC<{
         return;
       }
 
-      setLoading(true);
-      
       try {
         const data = await fetchPokepasteData(url);
         
@@ -3069,8 +3066,6 @@ const PokemonNamesLoader: React.FC<{
         } else {
           onPokemonNamesLoaded([]);
         }
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -3156,7 +3151,7 @@ const MyTeamPokepasteDisplay: React.FC<{
     };
 
     loadMyTeamData();
-  }, [content]);
+  }, [content, onPokemonDataLoaded]);
 
   if (loading) {
     return (
@@ -3968,19 +3963,28 @@ Impish Nature
     
     if (!shouldProceed) return;
     
-    let successCount = 0;
-    let errorCount = 0;
-    const errors: string[] = [];
-    const newGameplans: Gameplan[] = [];
+    const allResults: Array<{
+      success: boolean;
+      gameplans: Gameplan[];
+      error?: string;
+      successCount: number;
+    }> = [];
     
     // Process files sequentially to avoid overwhelming the user
     for (const file of validFiles) {
       try {
-        await new Promise<void>((resolve, reject) => {
+        const result = await new Promise<{
+          success: boolean;
+          gameplans: Gameplan[];
+          error?: string;
+          successCount: number;
+        }>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => {
             try {
               const fileContent = e.target?.result as string;
+              const fileGameplans: Gameplan[] = [];
+              let fileSuccessCount = 0;
               
               if (file.name.endsWith('.json')) {
                 // Process JSON file
@@ -4007,16 +4011,15 @@ Impish Nature
                           lastModified: file.lastModified
                         }
                       };
-                      newGameplans.push(newGameplan);
+                      fileGameplans.push(newGameplan);
                     });
-                    successCount += validGameplans.length;
+                    fileSuccessCount = validGameplans.length;
+                    resolve({ success: true, gameplans: fileGameplans, successCount: fileSuccessCount });
                   } else {
-                    errors.push(`${file.name}: No valid gameplans found`);
-                    errorCount++;
+                    resolve({ success: false, gameplans: [], error: `${file.name}: No valid gameplans found`, successCount: 0 });
                   }
                 } else {
-                  errors.push(`${file.name}: Invalid JSON format`);
-                  errorCount++;
+                  resolve({ success: false, gameplans: [], error: `${file.name}: Invalid JSON format`, successCount: 0 });
                 }
               } else if (file.name.endsWith('.md')) {
                 // Process Markdown file
@@ -4085,31 +4088,45 @@ Impish Nature
                     }
                   };
                   
-                  newGameplans.push(gameplan);
-                  successCount++;
+                  fileGameplans.push(gameplan);
+                  fileSuccessCount = 1;
+                  resolve({ success: true, gameplans: fileGameplans, successCount: fileSuccessCount });
                 } else {
-                  errors.push(`${file.name}: Invalid markdown format (missing YAML frontmatter)`);
-                  errorCount++;
+                  resolve({ success: false, gameplans: [], error: `${file.name}: Invalid markdown format (missing YAML frontmatter)`, successCount: 0 });
                 }
               }
-              resolve();
             } catch (error) {
-              errors.push(`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              errorCount++;
-              reject(error);
+              resolve({ success: false, gameplans: [], error: `${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`, successCount: 0 });
             }
           };
           reader.onerror = () => {
-            errors.push(`${file.name}: Failed to read file`);
-            errorCount++;
-            reject(new Error('File read error'));
+            resolve({ success: false, gameplans: [], error: `${file.name}: Failed to read file`, successCount: 0 });
           };
           reader.readAsText(file);
         });
+        allResults.push(result);
       } catch (error) {
-        // Error already handled above
+        allResults.push({ success: false, gameplans: [], error: `${file.name}: Unexpected error`, successCount: 0 });
       }
     }
+    
+    // Aggregate results
+    const newGameplans: Gameplan[] = [];
+    const errors: string[] = [];
+    let successCount = 0;
+    let errorCount = 0;
+    
+    allResults.forEach(result => {
+      if (result.success) {
+        newGameplans.push(...result.gameplans);
+        successCount += result.successCount;
+      } else {
+        if (result.error) {
+          errors.push(result.error);
+        }
+        errorCount++;
+      }
+    });
     
     // Update state once with all new gameplans
     if (newGameplans.length > 0) {
@@ -4876,3 +4893,4 @@ const AppWithAuth: React.FC = () => {
 };
 
 export default AppWithAuth;
+

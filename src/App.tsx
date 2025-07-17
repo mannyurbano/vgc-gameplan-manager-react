@@ -5414,6 +5414,14 @@ Impish Nature
     }
   }, []);
 
+  // Replay management functions
+  const handleReplayAdded = (gameplanId: string, replay: Replay) => {
+    // Implement as needed or connect to state
+  };
+  const handleReplayDeleted = (gameplanId: string, replayId: string) => {
+    // Implement as needed or connect to state
+  };
+
   return (
     <div className="app">
       <AppHeader 
@@ -5759,3 +5767,47 @@ Impish Nature
 // Enhanced header component with user info
 const AppHeader: React.FC<{ 
   isMobileSidebarOpen: boolean;
+  setIsMobileSidebarOpen: (open: boolean) => void;
+}> = ({ isMobileSidebarOpen, setIsMobileSidebarOpen }) => {
+  // Dummy user for now, replace with real auth if needed
+  const user = { name: 'User', avatar_url: '', login: 'user' };
+  const logout = () => {};
+  return (
+    <header className="header">
+      <div className="header-content">
+        <div className="header-title">
+          <button 
+            className="mobile-menu-toggle"
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            aria-label="Toggle menu"
+          >
+            ☰
+          </button>
+          <div>
+            <h1>🎮 VGC Team Manager</h1>
+            <p>Manage your VGC team strategies and gameplans</p>
+          </div>
+        </div>
+        <div className="header-user">
+          <div className="user-profile">
+            <img src={user?.avatar_url} alt="Profile" className="user-profile-avatar" />
+            <div className="user-profile-info">
+              <span className="user-name">{user?.name || user?.login}</span>
+              <span className="user-status">Beta Access</span>
+            </div>
+          </div>
+          <button onClick={logout} className="btn btn-secondary btn-sm">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+// Main App component wrapped with authentication (if needed)
+const AppWithAuth: React.FC = () => {
+  return <App />;
+};
+
+export default AppWithAuth;

@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
-import { AuthProvider } from './auth/AuthProvider';
-import { AuthGuard } from './auth/AuthGuard';
-import { useAuth } from './auth/AuthProvider';
 import { CloudImportModal } from './CloudImportModal';
 import './App.css';
 
@@ -1423,211 +1420,7 @@ const PokemonSprite: React.FC<{
   );
 };
 
-// New Replay Management Component
-const ReplayManager: React.FC<{ 
-  gameplan: Gameplan;
-  selectedMatchup: string;
-  selectedGameplanNumber?: number;
-  onReplayAdded: (replay: Replay) => void;
-  onReplayDeleted: (replayId: string) => void;
-}> = ({ gameplan, selectedMatchup, selectedGameplanNumber, onReplayAdded, onReplayDeleted }) => {
 
-  // Get replays for the current matchup and gameplan
-  const getReplaysForCurrentContext = (): Replay[] => {
-    const matchupReplays = gameplan.replays?.[selectedMatchup];
-    const replays: Replay[] = [];
-    
-    // Get manually added replays from the app
-    if (matchupReplays) {
-      if (selectedGameplanNumber) {
-        // Show replays for specific gameplan
-        const gameplanReplays = matchupReplays[selectedGameplanNumber.toString()] || [];
-        replays.push(...gameplanReplays);
-      } else {
-        // Show all replays for this matchup
-        Object.entries(matchupReplays).forEach(([gameplanKey, gameplanReplays]) => {
-          gameplanReplays.forEach(replay => {
-            replays.push({
-              ...replay,
-              gameplanNumber: gameplanKey === 'general' ? undefined : parseInt(gameplanKey)
-            });
-          });
-        });
-      }
-    }
-    
-    // Get replays from markdown file
-    const extractReplaysFromMarkdown = (content: string, matchup: string) => {
-      const lines = content.split('\n');
-      const markdownReplays: Replay[] = [];
-      
-      let inReplaysSection = false;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        
-        // Check if we're entering the replays section
-        if (line === '## Replays') {
-          inReplaysSection = true;
-          continue;
-        }
-        
-        // Exit replays section if we hit another major section
-        if (inReplaysSection && line.startsWith('## ') && line !== '## Replays') {
-          inReplaysSection = false;
-          break;
-        }
-        
-        // Look for matchup-specific replay sections
-        if (inReplaysSection && line.startsWith('### ') && line.toLowerCase().includes(matchup.toLowerCase())) {
-          let j = i + 1;
-          while (j < lines.length) {
-            const nextLine = lines[j].trim();
-            
-            // Stop if we hit another section
-            if (nextLine.startsWith('### ') || nextLine.startsWith('## ')) {
-              break;
-            }
-            
-            // Look for replay entries in the format: - [Result] URL - Notes
-            const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
-            if (replayMatch) {
-              const [, result, url, notes] = replayMatch;
-              const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                                   !url.includes('replay.pokemonshowdown.com');
-              
-              // Try to extract gameplan number from the notes
-              let gameplanNumber: number | undefined;
-              if (notes.toLowerCase().includes('gameplan 1') || notes.toLowerCase().includes('gp1')) {
-                gameplanNumber = 1;
-              } else if (notes.toLowerCase().includes('gameplan 2') || notes.toLowerCase().includes('gp2')) {
-                gameplanNumber = 2;
-              } else if (notes.toLowerCase().includes('gameplan 3') || notes.toLowerCase().includes('gp3')) {
-                gameplanNumber = 3;
-              }
-              
-              // Only include if it matches the selected gameplan (if one is selected)
-              if (!selectedGameplanNumber || gameplanNumber === selectedGameplanNumber || !gameplanNumber) {
-                markdownReplays.push({
-                  id: `markdown-${matchup}-${j}`,
-                  url,
-                  matchup,
-                  gameplanNumber,
-                  dateAdded: new Date().toISOString(),
-                  description: notes.trim(),
-                  result: result.toLowerCase() as 'win' | 'loss' | 'draw'
-                });
-              }
-            }
-            
-            j++;
-          }
-        }
-      }
-      
-      return markdownReplays;
-    };
-    
-    const markdownReplays = extractReplaysFromMarkdown(gameplan.content, selectedMatchup);
-    replays.push(...markdownReplays);
-    
-    return replays;
-  };
-  
-  const currentReplays = getReplaysForCurrentContext();
-
-  return (
-    <div className="replay-manager">
-      <div className="replay-header">
-        <h5 style={{ color: '#10b981', fontWeight: 600, marginBottom: 8, fontSize: '13px' }}>
-          🎮 Replays
-        </h5>
-      </div>
-
-      <div className="replays-list">
-        {currentReplays.length === 0 ? (
-          <div style={{ 
-            color: 'rgba(255,255,255,0.6)', 
-            fontStyle: 'italic', 
-            textAlign: 'center',
-            padding: '0.5rem',
-            fontSize: '11px'
-          }}>
-            No replays found
-          </div>
-        ) : (
-          currentReplays.map((replay: Replay) => (
-            <div key={replay.id} className="replay-item" style={{
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '6px',
-              padding: '0.5rem',
-              marginBottom: '0.4rem'
-            }}>
-              <div className="replay-info">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem', flexWrap: 'wrap' }}>
-                  <a
-                    href={replay.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#60a5fa', textDecoration: 'none', fontWeight: 500, fontSize: '11px' }}
-                  >
-                    📺 View
-                  </a>
-                  <span style={{
-                    padding: '0.2rem 0.4rem',
-                    borderRadius: '3px',
-                    fontSize: '0.7rem',
-                    fontWeight: 500,
-                    background: replay.result === 'win' ? 'rgba(34, 197, 94, 0.2)' : 
-                               replay.result === 'loss' ? 'rgba(239, 68, 68, 0.2)' : 
-                               'rgba(245, 158, 11, 0.2)',
-                    color: replay.result === 'win' ? '#22c55e' : 
-                           replay.result === 'loss' ? '#ef4444' : '#f59e0b'
-                  }}>
-                    {(replay.result || 'win').toUpperCase()}
-                  </span>
-                  {replay.gameplanNumber && (
-                    <span style={{
-                      padding: '0.2rem 0.4rem',
-                      borderRadius: '3px',
-                      fontSize: '0.7rem',
-                      fontWeight: 500,
-                      background: 'rgba(59, 130, 246, 0.2)',
-                      color: '#3b82f6'
-                    }}>
-                      GP{replay.gameplanNumber}
-                    </span>
-                  )}
-                  {replay.id.startsWith('markdown-') && (
-                    <span style={{
-                      padding: '0.2rem 0.4rem',
-                      borderRadius: '3px',
-                      fontSize: '0.7rem',
-                      fontWeight: 500,
-                      background: 'rgba(139, 92, 246, 0.2)',
-                      color: '#8b5cf6'
-                    }}>
-                      FILE
-                    </span>
-                  )}
-                </div>
-                {replay.description && (
-                  <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '10px', marginBottom: '0.2rem', lineHeight: '1.2' }}>
-                    {replay.description.length > 60 ? replay.description.substring(0, 60) + '...' : replay.description}
-                  </div>
-                )}
-                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '9px' }}>
-                  {new Date(replay.dateAdded).toLocaleDateString()}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
 
 // Component for dropdown sprites that can load from pokepaste
 const DropdownPokemonSprites: React.FC<{ 
@@ -1643,55 +1436,72 @@ const DropdownPokemonSprites: React.FC<{
     const extractPokepasteUrl = (content: string, matchup: string): string | null => {
       const lines = content.split('\n');
       let inMatchupSection = false;
-      let foundMatchupSection = false;
+      let inStrategiesSection = false;
+      
+      console.log(`[DEBUG] extractPokepasteUrl called with matchup: "${matchup}"`);
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         
-        // Check if we're entering the matchup section
-        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
-            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
-          inMatchupSection = true;
-          foundMatchupSection = true;
+        // Check if we're in the Matchup-Specific Strategies section
+        if (line.includes('## Matchup-Specific Strategies')) {
+          inStrategiesSection = true;
           continue;
         }
         
-        // Check if we're leaving the matchup section
-        if (foundMatchupSection && inMatchupSection && 
-            (line.startsWith('###') || line.startsWith('##')) && 
-            !line.toLowerCase().includes(matchup.toLowerCase())) {
-          break;
+        // Check if we're entering the matchup section (only in strategies section)
+        if (inStrategiesSection && (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`))) {
+          console.log(`[DEBUG] Found matchup section at line ${i}: "${line}"`);
+          inMatchupSection = true;
+          continue;
         }
         
+        // If we hit a new matchup section, stop searching
+        if (inMatchupSection && (line.startsWith('###') || line.startsWith('##')) && !line.toLowerCase().includes(matchup.toLowerCase())) {
+          console.log(`[DEBUG] Leaving matchup section at line ${i}: "${line}"`);
+          break;
+        }
         // Look for Pokepaste links only within the correct matchup section
         if (inMatchupSection) {
+          console.log(`[DEBUG] Checking line ${i} in matchup section: "${line}"`);
           // First try to match markdown link format: [Pokepaste](https://pokepast.es/...)
           const markdownMatch = line.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-f0-9-]+)\)/i);
           if (markdownMatch) {
+            console.log(`[DEBUG] Found pokepaste URL: ${markdownMatch[1]}`);
             return markdownMatch[1];
           }
           // Fallback to direct URL format
           const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9-]+/i);
           if (pokepasteMatch) {
+            console.log(`[DEBUG] Found direct pokepaste URL: ${pokepasteMatch[0]}`);
             return pokepasteMatch[0];
           }
         }
       }
       
+      console.log(`[DEBUG] No pokepaste URL found for matchup: "${matchup}"`);
       return null;
     };
 
     const extractFallbackPokemon = (content: string, matchup: string): string[] => {
       const lines = content.split('\n');
       let inMatchupSection = false;
+      let inStrategiesSection = false;
       const allPokemon: string[] = [];
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         
-        // Check if we're entering the matchup section
-        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
-            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
+        // Check if we're in the Matchup-Specific Strategies section
+        if (line.includes('## Matchup-Specific Strategies')) {
+          inStrategiesSection = true;
+          continue;
+        }
+        
+        // Check if we're entering the matchup section (only in strategies section)
+        if (inStrategiesSection && (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`))) {
           inMatchupSection = true;
           continue;
         }
@@ -1901,6 +1711,9 @@ const MatchupSelector: React.FC<{
 
   // Extract matchup data dynamically from gameplan content
   const extractMatchups = (content: string) => {
+    console.log('ExtractMatchups called with content length:', content.length);
+    console.log('Content preview:', content.substring(0, 500));
+    
     const matchups: { [key: string]: { 
       lead: string; 
       back: string; 
@@ -1924,8 +1737,11 @@ const MatchupSelector: React.FC<{
       const line = lines[i].trim();
       
       // Look for main matchup sections starting with "### vs " or "## vs "
-      if (line.startsWith('### vs ') || line.startsWith('## vs ')) {
-        const opponentName = line.replace(/^#+\s*vs\s*/, '').trim();
+      // But only in the "Matchup-Specific Strategies" section, not in the "Replays" section
+              if ((line.startsWith('### vs ') || line.startsWith('## vs ')) && 
+            !content.substring(0, i).includes('## Replays')) {
+          const opponentName = line.replace(/^#+\s*vs\s*/, '').trim();
+          console.log('Found matchup section:', opponentName, 'at line:', i);
         let lead = '';
         let back = '';
         let strategy = '';
@@ -1952,7 +1768,7 @@ const MatchupSelector: React.FC<{
             break;
           }
           
-          // Extract recommended lead from first gameplan if not found yet
+          // Extract recommended lead from matchup level or first gameplan if not found yet
           if (!lead && nextLine.includes('**My Lead:**')) {
             const leadMatch = nextLine.match(/\*\*My Lead:\*\*\s*(.+)/i);
             if (leadMatch) {
@@ -1961,12 +1777,29 @@ const MatchupSelector: React.FC<{
             }
           }
           
-          // Extract back line from first gameplan if not found yet
+          // Extract back line from matchup level or first gameplan if not found yet
           if (!back && nextLine.includes('**My Back:**')) {
             const backMatch = nextLine.match(/\*\*My Back:\*\*\s*(.+)/i);
             if (backMatch) {
               back = backMatch[1].trim();
               console.log(`Found back: ${back}`);
+            }
+          }
+          
+          // Also look for lead/back in the first few lines after the matchup header
+          if (!lead && j === i + 1 && nextLine.includes('**My Lead:**')) {
+            const leadMatch = nextLine.match(/\*\*My Lead:\*\*\s*(.+)/i);
+            if (leadMatch) {
+              lead = leadMatch[1].trim();
+              console.log(`Found lead at matchup level: ${lead}`);
+            }
+          }
+          
+          if (!back && j === i + 2 && nextLine.includes('**My Back:**')) {
+            const backMatch = nextLine.match(/\*\*My Back:\*\*\s*(.+)/i);
+            if (backMatch) {
+              back = backMatch[1].trim();
+              console.log(`Found back at matchup level: ${back}`);
             }
           }
           
@@ -2161,12 +1994,12 @@ const MatchupSelector: React.FC<{
         }
         
         // Only add if we found essential information
-        if (opponentName && lead && back) {
+        if (opponentName && (lead || back)) {
           console.log(`Adding matchup: ${opponentName} with lead: ${lead}, back: ${back}`);
           console.log(`Opponent team data:`, opponentTeam);
           matchups[opponentName] = {
-            lead,
-            back,
+            lead: lead || 'Check gameplan for lead',
+            back: back || 'Check gameplan for back',
             strategy: strategy || 'Check gameplan for detailed strategy',
             note: note || undefined,
             turnOptions: turnOptions.length > 0 ? turnOptions : undefined,
@@ -2185,8 +2018,12 @@ const MatchupSelector: React.FC<{
     return matchups;
   };
 
+  console.log('Gameplan content length:', gameplan.content.length);
+  console.log('Gameplan content preview:', gameplan.content.substring(0, 200));
+  
   const matchups = extractMatchups(gameplan.content);
   const matchupKeys = Object.keys(matchups);
+  console.log('Available matchups:', matchupKeys);
   
   console.log('MatchupSelector - matchups found:', matchupKeys);
   console.log('MatchupSelector - matchups object:', matchups);
@@ -2208,11 +2045,16 @@ const MatchupSelector: React.FC<{
     let inMatchup = false;
     let gameplans: any[] = [];
     let current: any = null;
+    
+    console.log('Extracting gameplans for matchup:', matchup);
+    
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       // Find the matchup section
       if (line.toLowerCase().startsWith('### vs ') || line.toLowerCase().startsWith('## vs ')) {
-        inMatchup = line.replace(/^#+\s*vs\s*/i, '').trim().toLowerCase() === matchup.toLowerCase();
+        const foundMatchup = line.replace(/^#+\s*vs\s*/i, '').trim().toLowerCase();
+        inMatchup = foundMatchup === matchup.toLowerCase();
+        console.log('Found matchup section:', foundMatchup, 'matches:', inMatchup);
       }
       if (inMatchup && line.startsWith('### Gameplan')) {
         if (current) gameplans.push(current);
@@ -2225,6 +2067,7 @@ const MatchupSelector: React.FC<{
           myWincon: '',
           first3Turns: []
         };
+        console.log('Found gameplan:', line);
       }
       if (inMatchup && current) {
         if (line.startsWith('**Opponent Lead:**') || line.startsWith("**Opponent's Lead:**")) {
@@ -2283,10 +2126,15 @@ const MatchupSelector: React.FC<{
     }
     if (current) gameplans.push(current);
     // Filter out empty gameplans
-    return gameplans.filter(gp => gp.myLead && gp.myBack);
+    const filteredGameplans = gameplans.filter(gp => gp.myLead && gp.myBack);
+    console.log('Extracted gameplans:', filteredGameplans);
+    return filteredGameplans;
   };
 
   const gameplansForMatchup = selectedMatchup ? extractGameplans(gameplan.content, selectedMatchup) : [];
+  console.log('Selected matchup:', selectedMatchup);
+  console.log('Gameplans for matchup:', gameplansForMatchup);
+  console.log('Gameplans length:', gameplansForMatchup.length);
 
   // --- New Notes Section Extractor ---
   const extractNotesSection = (content: string) => {
@@ -2309,345 +2157,9 @@ const MatchupSelector: React.FC<{
     return notes.join('\n').trim();
   };
 
-  // --- Extract Replay URLs for a specific matchup ---
-  const extractReplaysForMatchup = (content: string, matchup: string) => {
-    const lines = content.split('\n');
-    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean, result?: string, gameplanNumber?: number}> = [];
-    console.log(`Extracting replays for matchup: ${matchup}`);
-    
-    // Look for the new replay format: ## Replays section
-    let inReplaysSection = false;
-    let currentGameplanNumber = 0;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      // Check if we're entering the replays section
-      if (line === '## Replays') {
-        inReplaysSection = true;
-        continue;
-      }
-      
-      // Exit replays section if we hit another major section
-      if (inReplaysSection && line.startsWith('## ') && line !== '## Replays') {
-        inReplaysSection = false;
-        break;
-      }
-      
-      // Look for matchup-specific replay sections
-      if (inReplaysSection && line.startsWith('### ') && line.toLowerCase().includes(matchup.toLowerCase())) {
-        console.log(`Found replay section for matchup: ${line}`);
-        
-        // Extract replays from this matchup section
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextLine = lines[j].trim();
-          
-          // Stop if we hit another section
-          if (nextLine.startsWith('### ') || nextLine.startsWith('## ')) {
-            break;
-          }
-          
-          // Look for replay entries in the format: - [Result] URL - Notes
-          const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
-          if (replayMatch) {
-            const [, result, url, notes] = replayMatch;
-            const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                                 !url.includes('replay.pokemonshowdown.com');
-            
-            // Try to extract gameplan number from the notes or context
-            let gameplanNumber: number | undefined;
-            if (notes.toLowerCase().includes('gameplan 1') || notes.toLowerCase().includes('gp1')) {
-              gameplanNumber = 1;
-            } else if (notes.toLowerCase().includes('gameplan 2') || notes.toLowerCase().includes('gp2')) {
-              gameplanNumber = 2;
-            } else if (notes.toLowerCase().includes('gameplan 3') || notes.toLowerCase().includes('gp3')) {
-              gameplanNumber = 3;
-            }
-            
-            const replayData = {
-              url,
-              notes: notes.trim(),
-              result: result.toLowerCase(),
-              isPlaceholder,
-              gameplanNumber
-            };
-            console.log(`Adding replay from markdown:`, replayData);
-            replays.push(replayData);
-          }
-          
-          j++;
-        }
-      }
-    }
-    
-    // If we didn't find any replays in the new format, try the old format as fallback
-    if (replays.length === 0) {
-      console.log(`No replays found in new format for ${matchup}, trying old format...`);
-      
-      // Look for all replay URLs in the content that match the matchup
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        
-        // Check if we're in a section that matches our matchup
-        const isInMatchupSection = line.toLowerCase().includes(matchup.toLowerCase()) ||
-                                  (line.startsWith('###') && line.toLowerCase().includes(matchup.toLowerCase())) ||
-                                  (line.startsWith('##') && line.toLowerCase().includes(matchup.toLowerCase()));
-        
-        // Extract replay URL
-        const replayMatch = line.match(/\*\*Replay:\*\*\s*(.+)/i);
-        if (replayMatch) {
-          console.log(`Found replay URL: ${replayMatch[1]}`);
-          const url = replayMatch[1].trim();
-          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                               !url.includes('replay.pokemonshowdown.com');
-          
-          // Look for result and notes on subsequent lines
-          let result = '';
-          let notes = '';
-          let j = i + 1;
-          
-          while (j < lines.length && j < i + 10) { // Look up to 10 lines ahead
-            const lookAheadLine = lines[j].trim();
-            
-            // Stop if we hit another replay or major section
-            if (lookAheadLine.startsWith('**Replay:**') || 
-                lookAheadLine.startsWith('###') || 
-                lookAheadLine.startsWith('##') ||
-                lookAheadLine.startsWith('**Damage Calculations:**') ||
-                lookAheadLine.startsWith('- **Replay:**')) {
-              break;
-            }
-            
-            if (lookAheadLine.startsWith('**Result:**')) {
-              result = lookAheadLine.replace('**Result:**', '').trim();
-            } else if (lookAheadLine.startsWith('**Notes:**')) {
-              notes = lookAheadLine.replace('**Notes:**', '').trim();
-            }
-            
-            j++;
-          }
-          
-          const replayData = {
-            url,
-            notes: notes || undefined,
-            result: result || undefined,
-            isPlaceholder
-          };
-          console.log(`Adding replay to array:`, replayData);
-          replays.push(replayData);
-        }
-      }
-    }
-    
-    // If we still didn't find any replays, look for any replay URLs in the entire content
-    if (replays.length === 0) {
-      const allReplayMatches = content.match(/https:\/\/replay\.pokemonshowdown\.com\/[^\s\n\r]*/g);
-      if (allReplayMatches) {
-        allReplayMatches.forEach(url => {
-          const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]');
-          replays.push({
-            url,
-            isPlaceholder
-          });
-        });
-      }
-    }
-    
-    // Limit to 10 replays and return
-    return replays.slice(0, 10);
-  };
 
-  const extractReplaysForGameplan = (content: string, matchup: string, gameplanNumber: number) => {
-    const lines = content.split('\n');
-    const replays: Array<{url: string, notes?: string, isPlaceholder: boolean, result?: string}> = [];
-    console.log(`Extracting replays for gameplan ${gameplanNumber} of matchup: ${matchup}`);
-    
-    let inMatchupSection = false;
-    let inTargetGameplan = false;
-    let currentGameplanNumber = 0;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      // Check if we're entering the matchup section
-      if (line.startsWith('### vs ') && line.toLowerCase().includes(matchup.toLowerCase())) {
-        inMatchupSection = true;
-        currentGameplanNumber = 0;
-        console.log(`Entering matchup section: ${line}`);
-        continue;
-      }
-      
-      // Exit matchup section if we hit another major matchup section
-      if (inMatchupSection && line.startsWith('### vs ') && !line.toLowerCase().includes(matchup.toLowerCase())) {
-        inMatchupSection = false;
-        inTargetGameplan = false;
-        console.log(`Exiting matchup section: ${line}`);
-        continue;
-      }
-      
-      // Check if we're entering a gameplan section within our matchup
-      if (inMatchupSection && line.startsWith('### Gameplan') && line.includes('vs')) {
-        currentGameplanNumber++;
-        inTargetGameplan = (currentGameplanNumber === gameplanNumber);
-        console.log(`Gameplan ${currentGameplanNumber}, target: ${gameplanNumber}, inTarget: ${inTargetGameplan}`);
-        continue;
-      }
-      
-      // Exit gameplan section if we hit another major section (## )
-      if (inTargetGameplan && line.startsWith('## ')) {
-        inTargetGameplan = false;
-        continue;
-      }
-      
-      // Look for "Replay Examples:" or "Replay Examples-G1/G2/G3:" within the target gameplan section
-      if (inTargetGameplan && (line.includes('**Replay Examples:**') || line.includes('**Replay Examples-G1:**') || line.includes('**Replay Examples-G2:**') || line.includes('**Replay Examples-G3:**'))) {
-        console.log(`Found replay examples in target gameplan section: ${line}`);
-        
-        // Extract replays from this section
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextLine = lines[j].trim();
-          
-          // Stop if we hit another section or gameplan
-          if (nextLine.startsWith('###') || nextLine.startsWith('##') || 
-              nextLine.startsWith('**Damage Calculations:**') || nextLine.startsWith('**Notes:**')) {
-            break;
-          }
-          
-          // Extract replay URL
-          const replayMatch = nextLine.match(/\*\*Replay:\*\*\s*(.+)/i);
-          if (replayMatch) {
-            console.log(`Found replay URL: ${replayMatch[1]}`);
-            const url = replayMatch[1].trim();
-            const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                                 !url.includes('replay.pokemonshowdown.com');
-            
-            // Look for result and notes on subsequent lines
-            let result = '';
-            let notes = '';
-            let k = j + 1;
-            
-            while (k < lines.length && k < j + 10) { // Look up to 10 lines ahead
-              const lookAheadLine = lines[k].trim();
-              
-              // Stop if we hit another replay or section
-              if (lookAheadLine.startsWith('**Replay:**') || 
-                  lookAheadLine.startsWith('###') || 
-                  lookAheadLine.startsWith('##') ||
-                  lookAheadLine.startsWith('**Damage Calculations:**') ||
-                  lookAheadLine.startsWith('- **Replay:**')) {
-                break;
-              }
-              
-              if (lookAheadLine.startsWith('**Result:**')) {
-                result = lookAheadLine.replace('**Result:**', '').trim();
-              } else if (lookAheadLine.startsWith('**Notes:**')) {
-                notes = lookAheadLine.replace('**Notes:**', '').trim();
-              }
-              
-              k++;
-            }
-            
-            const replayData = {
-              url,
-              notes: notes || undefined,
-              result: result || undefined,
-              isPlaceholder
-            };
-            console.log(`Adding replay to array:`, replayData);
-            replays.push(replayData);
-          }
-          
-          j++;
-        }
-      }
-    }
-    
-    // If we didn't find any replays, try a simpler approach - extract all replays from the matchup section
-    if (replays.length === 0) {
-      console.log(`No replays found with gameplan-specific extraction, trying general matchup extraction`);
-      let inMatchup = false;
-      let gameplanCount = 0;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        
-        // Find the matchup section
-        if (line.startsWith('### vs ') && line.toLowerCase().includes(matchup.toLowerCase())) {
-          inMatchup = true;
-          gameplanCount = 0;
-          continue;
-        }
-        
-        // Exit matchup section
-        if (inMatchup && line.startsWith('### vs ') && !line.toLowerCase().includes(matchup.toLowerCase())) {
-          break;
-        }
-        
-        // Count gameplans in this matchup
-        if (inMatchup && line.startsWith('### Gameplan')) {
-          gameplanCount++;
-          if (gameplanCount === gameplanNumber) {
-            // Extract replays from this gameplan
-            let j = i + 1;
-            while (j < lines.length) {
-              const nextLine = lines[j].trim();
-              
-              // Stop if we hit another gameplan or section
-              if (nextLine.startsWith('### Gameplan') || nextLine.startsWith('### vs ') || 
-                  nextLine.startsWith('## ')) {
-                break;
-              }
-              
-              // Extract replay URL
-              const replayMatch = nextLine.match(/\*\*Replay:\*\*\s*(.+)/i);
-              if (replayMatch) {
-                const url = replayMatch[1].trim();
-                const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                                     !url.includes('replay.pokemonshowdown.com');
-                
-                // Look for result and notes on subsequent lines
-                let result = '';
-                let notes = '';
-                let k = j + 1;
-                
-                while (k < lines.length && k < j + 10) {
-                  const lookAheadLine = lines[k].trim();
-                  
-                  if (lookAheadLine.startsWith('**Replay:**') || 
-                      lookAheadLine.startsWith('###') || 
-                      lookAheadLine.startsWith('##')) {
-                    break;
-                  }
-                  
-                  if (lookAheadLine.startsWith('**Result:**')) {
-                    result = lookAheadLine.replace('**Result:**', '').trim();
-                  } else if (lookAheadLine.startsWith('**Notes:**')) {
-                    notes = lookAheadLine.replace('**Notes:**', '').trim();
-                  }
-                  
-                  k++;
-                }
-                
-                replays.push({
-                  url,
-                  notes: notes || undefined,
-                  result: result || undefined,
-                  isPlaceholder
-                });
-              }
-              
-              j++;
-            }
-            break;
-          }
-        }
-      }
-    }
-    
-    return replays;
-  };
+
+
 
   // Filter matchups based on search term - now uses pokepaste data when available
   const getMatchupPokemon = (matchupKey: string) => {
@@ -2954,8 +2466,7 @@ const MatchupSelector: React.FC<{
                                       const replayMatch = nextLine.match(/^-\s*\[(Win|Loss|Draw)\]\s*(https:\/\/replay\.pokemonshowdown\.com\/[^\s]+)\s*-\s*(.+)$/i);
                                       if (replayMatch) {
                                         const [, result, url, notes] = replayMatch;
-                                        const isPlaceholder = url.includes('1234567') || url.includes('[REPLAY_ID]') || 
-                                                             !url.includes('replay.pokemonshowdown.com');
+                                        // Removed unused isPlaceholder variable
                                         
                                         // Try to extract gameplan number from the notes
                                         let gameplanNumber: number | undefined;
@@ -4027,13 +3538,23 @@ const PokepasteTeamDisplay: React.FC<{
       const lines = content.split('\n');
       let inMatchupSection = false;
       let foundMatchupSection = false;
+      let inStrategiesSection = false;
+      
+      console.log(`[DEBUG] extractPokepasteUrl called with matchup: "${matchup}"`);
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         
-        // Check if we're entering the matchup section
-        if (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
-            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`)) {
+        // Check if we're in the Matchup-Specific Strategies section
+        if (line.includes('## Matchup-Specific Strategies')) {
+          inStrategiesSection = true;
+          continue;
+        }
+        
+        // Check if we're entering the matchup section (only in strategies section)
+        if (inStrategiesSection && (line.toLowerCase().includes(`vs ${matchup.toLowerCase()}`) || 
+            line.toLowerCase().includes(`### vs ${matchup.toLowerCase()}`))) {
+          console.log(`[DEBUG] Found matchup section at line ${i}: "${line}"`);
           inMatchupSection = true;
           foundMatchupSection = true;
           continue;
@@ -4043,6 +3564,7 @@ const PokepasteTeamDisplay: React.FC<{
         if (foundMatchupSection && inMatchupSection && 
             (line.startsWith('###') || line.startsWith('##')) && 
             !line.toLowerCase().includes(matchup.toLowerCase())) {
+          console.log(`[DEBUG] Leaving matchup section at line ${i}: "${line}"`);
           break;
         }
         
@@ -4051,16 +3573,19 @@ const PokepasteTeamDisplay: React.FC<{
           // First try to match markdown link format: [Pokepaste](https://pokepast.es/...)
           const markdownMatch = line.match(/\[Pokepaste\]\((https:\/\/pokepast\.es\/[a-f0-9-]+)\)/i);
           if (markdownMatch) {
+            console.log(`[DEBUG] Found pokepaste URL: ${markdownMatch[1]}`);
             return markdownMatch[1];
           }
           // Fallback to direct URL format
           const pokepasteMatch = line.match(/https:\/\/pokepast\.es\/[a-f0-9-]+/i);
           if (pokepasteMatch) {
+            console.log(`[DEBUG] Found direct pokepaste URL: ${pokepasteMatch[0]}`);
             return pokepasteMatch[0];
           }
         }
       }
       
+      console.log(`[DEBUG] No pokepaste URL found for matchup: "${matchup}"`);
       return null;
     };
 
@@ -4392,7 +3917,7 @@ Impish Nature
 
   }, [gameplans, selectedGameplan]);
   const [viewMode, setViewMode] = useState<'list' | 'detail' | 'edit'>('list');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Removed unused isModalOpen state
   const [isCloudImportModalOpen, setIsCloudImportModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -4545,7 +4070,7 @@ Impish Nature
 
 
   const closeModal = useCallback(() => {
-    setIsModalOpen(false);
+            // Removed unused setIsModalOpen call
     setSelectedGameplan(null);
     setIsEditing(false);
   }, []);
@@ -4644,13 +4169,7 @@ Impish Nature
     setIsMobileSidebarOpen(false); // Close mobile sidebar on navigation
   }, []);
 
-  const resetData = useCallback(() => {
-    if (window.confirm('Are you sure you want to reset all data? This will clear localStorage and reload from the gameplans directory.')) {
-      localStorage.removeItem('vgc-gameplans');
-      // Reload gameplans from API (which will provide sample data if directory is empty)
-      window.location.reload();
-    }
-  }, []);
+  // Removed unused resetData function
 
 
 

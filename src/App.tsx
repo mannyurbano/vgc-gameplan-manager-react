@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import { CloudImportModal } from './CloudImportModal';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
+import { AuthGuard } from './auth/AuthGuard';
 import './App.css';
 
 // File System Access API types (for modern browsers)
@@ -5288,9 +5290,7 @@ const AppHeader: React.FC<{
   isMobileSidebarOpen: boolean;
   setIsMobileSidebarOpen: (open: boolean) => void;
 }> = ({ isMobileSidebarOpen, setIsMobileSidebarOpen }) => {
-  // Dummy user for now, replace with real auth if needed
-  const user = { name: 'User', avatar_url: '', login: 'user' };
-  const logout = () => {};
+  const { user, logout } = useAuth();
   return (
     <header className="header">
       <div className="header-content">
@@ -5324,9 +5324,15 @@ const AppHeader: React.FC<{
   );
 };
 
-// Main App component wrapped with authentication (if needed)
+// Main App component wrapped with authentication
 const AppWithAuth: React.FC = () => {
-  return <App />;
+  return (
+    <AuthProvider>
+      <AuthGuard>
+        <App />
+      </AuthGuard>
+    </AuthProvider>
+  );
 };
 
 export default AppWithAuth;

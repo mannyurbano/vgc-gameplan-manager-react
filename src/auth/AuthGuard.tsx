@@ -35,11 +35,7 @@ const LoadingScreen: React.FC = () => (
       <h1>VGC Team Manager</h1>
       <div className="loading-spinner"></div>
       <p>Checking access...</p>
-      {process.env.NODE_ENV === 'development' && (
-        <p style={{ fontSize: '12px', color: '#666', marginTop: '20px' }}>
-          💡 Development mode: Auth bypass enabled for localhost
-        </p>
-      )}
+
     </div>
   </div>
 );
@@ -127,11 +123,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => (
       </div>
       <div className="auth-footer">
         <p>Built for competitive VGC players</p>
-        {process.env.NODE_ENV === 'development' && (
-          <p style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-            🔓 Running in development mode - auth bypass enabled
-          </p>
-        )}
+
       </div>
     </div>
   </div>

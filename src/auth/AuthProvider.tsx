@@ -24,8 +24,8 @@ interface GitHubUser {
 const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP';
 const RAILWAY_BACKEND_URL = 'https://vgc-gameplan-manager-react-production.up.railway.app';
 
-// Development bypass - set to true for localhost development
-const BYPASS_AUTH_IN_DEV = process.env.NODE_ENV === 'development';
+// Development bypass - set to false to require authentication
+const BYPASS_AUTH_IN_DEV = false;
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { logger } from '../utils/logger';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -21,8 +22,8 @@ interface GitHubUser {
 }
 
 // Configuration for GitHub Pages + Railway setup
-const GITHUB_CLIENT_ID = 'Ov23liIpfWCMoPUySiiP';
-const RAILWAY_BACKEND_URL = 'https://vgc-gameplan-manager-react-production.up.railway.app';
+const GITHUB_CLIENT_ID = process.env.REACT_APP_GITHUB_CLIENT_ID || 'Ov23liIpfWCMoPUySiiP';
+const RAILWAY_BACKEND_URL = process.env.REACT_APP_RAILWAY_BACKEND_URL || 'https://vgc-gameplan-manager-react-production.up.railway.app';
 
 // Development bypass - set to false to require authentication
 const BYPASS_AUTH_IN_DEV = false;
@@ -69,7 +70,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         email: primaryEmail,
       };
     } catch (error) {
-      console.error('Failed to fetch user profile:', error);
+      logger.error('Failed to fetch user profile:', error);
       return null;
     }
   }, []);
@@ -90,7 +91,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       return false;
     } catch (error) {
-      console.error('Authorization check failed:', error);
+      logger.error('Authorization check failed:', error);
       return false;
     }
   }, []);
@@ -102,7 +103,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       // Development bypass for localhost
       if (BYPASS_AUTH_IN_DEV && window.location.hostname === 'localhost') {
-        console.log('🔓 Development mode: Bypassing authentication');
+        logger.oauth('Development mode: Bypassing authentication');
         setUser({
           id: 0,
           login: 'dev-user',
@@ -129,7 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       if (authCode) {
-        console.log('🔄 Authorization code received, exchanging for access token...');
+        logger.oauth('Authorization code received, exchanging for access token...');
         // Clear the URL search params
         window.history.replaceState({}, document.title, window.location.pathname);
         
@@ -165,7 +166,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const tokenData = await tokenResponse.json();
           
           if (tokenData.access_token) {
-            console.log('✅ Access token received!');
+            logger.oauth('Access token received!');
             
             // Clean up stored OAuth parameters
             localStorage.removeItem('oauth_state');
@@ -184,9 +185,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 // Store auth state only if authorized
                 localStorage.setItem('github_auth_token', tokenData.access_token);
                 localStorage.setItem('github_user', JSON.stringify(userData));
-                console.log('✅ User authorized and logged in');
-              } else {
-                console.log('❌ User not authorized');
+                              logger.oauth('User authorized and logged in');
+            } else {
+              logger.oauth('User not authorized');
                 setError(`Access denied. User ${userData.login} is not authorized for this application.`);
               }
             }
@@ -194,7 +195,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw new Error(`Token exchange failed: ${tokenData.error || 'Unknown error'}`);
           }
         } catch (error) {
-          console.error('OAuth token exchange error:', error);
+          logger.error('OAuth token exchange error:', error);
           setError('Failed to complete authentication');
           // Clean up stored OAuth parameters on error
           localStorage.removeItem('oauth_state');
@@ -214,7 +215,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setIsAuthorized(authorized);
           
           if (!authorized) {
-            console.log('❌ Stored user no longer authorized');
+            logger.oauth('Stored user no longer authorized');
             setError(`Access denied. User ${userData.login} is not authorized for this application.`);
             // Clear stored auth data
             localStorage.removeItem('github_auth_token');
@@ -225,7 +226,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
     } catch (error) {
-      console.error('Auth initialization error:', error);
+      logger.error('Auth initialization error:', error);
       setError('Authentication initialization failed');
     } finally {
       setLoading(false);
@@ -237,7 +238,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [initializeAuth]);
 
   const login = () => {
-    console.log('🚀 Login button clicked - starting OAuth Flow...');
+    logger.oauth('Login button clicked - starting OAuth Flow...');
     setLoading(true);
     setError(null);
     
@@ -264,14 +265,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const oauthUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
       
-      console.log('🔄 Redirecting to GitHub OAuth...');
-      console.log('OAuth URL:', oauthUrl);
+      logger.oauth('Redirecting to GitHub OAuth...', oauthUrl);
       
       // Redirect to GitHub OAuth
       window.location.href = oauthUrl;
       
     } catch (error) {
-      console.error('OAuth error:', error);
+      logger.error('OAuth error:', error);
       setError('Failed to start OAuth authorization');
       setLoading(false);
     }

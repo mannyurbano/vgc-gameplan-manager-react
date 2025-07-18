@@ -17,21 +17,37 @@ A professional Pokémon VGC team planning and strategy tool with comprehensive g
 - Node.js 18+ 
 - npm
 
-### Getting Started
+### Quick Start
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/vgc-gameplan-manager-react.git
+git clone https://github.com/mannyurbano/vgc-gameplan-manager-react.git
 cd vgc-gameplan-manager-react
 
 # Install dependencies
 npm install
+
+# Copy environment template
+cp .env.example .env
 
 # Start both backend and frontend servers (auth bypassed on localhost)
 npm start
 
 # Alternative: Start only frontend (for static hosting testing)
 npm run start-frontend-only
+```
+
+### Development Scripts
+
+```bash
+npm start              # Start full development server
+npm run lint           # Check code quality
+npm run lint:fix       # Fix linting issues
+npm run format         # Format code with Prettier
+npm run type-check     # Check TypeScript types
+npm run validate       # Run all quality checks
+npm test               # Run tests
+npm run build          # Build for production
 ```
 
 ### Environment Variables
@@ -143,11 +159,25 @@ src/
 
 ## 🤝 Contributing
 
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for detailed information.
+
+### Quick Contribution Steps
+
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+4. Run quality checks (`npm run validate`)
+5. Commit your changes (`git commit -m '✨ Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Code Quality
+
+Before submitting, ensure your code passes:
+- TypeScript compilation (`npm run type-check`)
+- Linting rules (`npm run lint`)
+- Code formatting (`npm run format:check`)
+- Unit tests (`npm test -- --watchAll=false`)
 
 ## 📄 License
 

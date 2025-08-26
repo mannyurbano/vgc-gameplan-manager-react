@@ -1431,6 +1431,7 @@ const DropdownPokemonSprites: React.FC<{
   size?: number;
 }> = ({ matchupKey, gameplanContent, size = 24 }) => {
   const [pokepasteData, setPokepasteData] = useState<OpponentTeamData | null>(null);
+  const [loading, setLoading] = useState(false);
   const [fallbackPokemon, setFallbackPokemon] = useState<string[]>([]);
 
   useEffect(() => {

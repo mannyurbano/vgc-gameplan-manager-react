@@ -1431,7 +1431,6 @@ const DropdownPokemonSprites: React.FC<{
   size?: number;
 }> = ({ matchupKey, gameplanContent, size = 24 }) => {
   const [pokepasteData, setPokepasteData] = useState<OpponentTeamData | null>(null);
-  const [loading, setLoading] = useState(false);
   const [fallbackPokemon, setFallbackPokemon] = useState<string[]>([]);
 
   useEffect(() => {
@@ -3451,7 +3450,7 @@ const MyTeamPokepasteDisplay: React.FC<{
     };
 
     loadMyTeamData();
-  }, [content, onPokemonDataLoaded]);
+  }, [content]); // Removed onPokemonDataLoaded from dependencies to avoid re-rendering when function reference changes
 
   if (loading) {
     return (
@@ -4564,20 +4563,19 @@ Impish Nature
     // Aggregate results
     const newGameplans: Gameplan[] = [];
     const errors: string[] = [];
-    let successCount = 0;
-    let errorCount = 0;
     
-    allResults.forEach(result => {
+    const { successCount, errorCount } = allResults.reduce((acc, result) => {
       if (result.success) {
         newGameplans.push(...result.gameplans);
-        successCount += result.successCount;
+        acc.successCount += result.successCount;
       } else {
         if (result.error) {
           errors.push(result.error);
         }
-        errorCount++;
+        acc.errorCount++;
       }
-    });
+      return acc;
+    }, { successCount: 0, errorCount: 0 });
     
     // Update state once with all new gameplans
     if (newGameplans.length > 0) {

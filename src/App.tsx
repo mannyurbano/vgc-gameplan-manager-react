@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import { CloudImportModal } from './CloudImportModal';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
@@ -3386,6 +3386,12 @@ const MyTeamPokepasteDisplay: React.FC<{
   const [error, setError] = useState<string | null>(null);
 
   const [pokepasteUrl, setPokepasteUrl] = useState<string | null>(null);
+  const onPokemonDataLoadedRef = useRef(onPokemonDataLoaded);
+  
+  // Update the ref when the callback changes
+  useEffect(() => {
+    onPokemonDataLoadedRef.current = onPokemonDataLoaded;
+  }, [onPokemonDataLoaded]);
 
   useEffect(() => {
     const extractMyTeamPokepasteUrl = (content: string): string | null => {
@@ -3435,9 +3441,9 @@ const MyTeamPokepasteDisplay: React.FC<{
           })));
           
           // Notify parent component of the pokemon names
-          if (onPokemonDataLoaded && data.pokemon) {
+          if (onPokemonDataLoadedRef.current && data.pokemon) {
             const pokemonNames = data.pokemon.map(p => p.name);
-            onPokemonDataLoaded(pokemonNames);
+            onPokemonDataLoadedRef.current(pokemonNames);
           }
         } else {
           setError('Failed to load team data from Pokepaste');

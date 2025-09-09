@@ -492,8 +492,9 @@ const getPokemonSpriteUrl = (pokemonName: string): string | null => {
     'Rotom-Fan': 'rotom-fan',
     'Rotom-Mow': 'rotom-mow',
     
-    // Maushold forms
-    'Maushold-Four': 'maushold-family-of-four',
+    // Maushold forms (both forms use the same base sprite)
+    'Maushold-Four': 'maushold',
+    'Maushold-Three': 'maushold',
     
     // Ursaluna forms
     'Ursaluna-Bloodmoon': 'ursaluna-bloodmoon',

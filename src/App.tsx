@@ -492,6 +492,12 @@ const getPokemonSpriteUrl = (pokemonName: string): string | null => {
     'Rotom-Fan': 'rotom-fan',
     'Rotom-Mow': 'rotom-mow',
     
+    // Maushold forms
+    'Maushold-Four': 'maushold-family-of-four',
+    
+    // Ursaluna forms
+    'Ursaluna-Bloodmoon': 'ursaluna-bloodmoon',
+    
     // Add more forms as needed
   };
   

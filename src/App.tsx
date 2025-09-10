@@ -499,6 +499,9 @@ const getPokemonSpriteUrl = (pokemonName: string): string | null => {
     // Ursaluna forms
     'Ursaluna-Bloodmoon': 'ursaluna-bloodmoon',
     
+    // Alolan forms
+    'Ninetales-Alola': 'ninetales-alolan',
+    
     // Add more forms as needed
   };
   
@@ -1262,7 +1265,8 @@ const extractPokemonFromText = (text: string): string[] => {
       'Landorus-Incarnate', 'Landorus-Therian',
       'Rotom-Heat', 'Rotom-Wash', 'Rotom-Frost', 'Rotom-Fan', 'Rotom-Mow',
       'Maushold-Four', 'Maushold-Three',
-      'Ursaluna-Bloodmoon'
+      'Ursaluna-Bloodmoon',
+      'Ninetales-Alola'
     ];
     
     const formFound = knownForms.find(form => form.toLowerCase() === part.toLowerCase());

@@ -129,6 +129,86 @@ src/
 └── App.tsx               # Main application
 ```
 
+## 🎨 Adding Pokemon Form Sprites
+
+When Pokemon forms like "Maushold-Four", "Ursaluna-Bloodmoon", or "Ninetales-Alola" show as "?" instead of sprites, follow these steps:
+
+### Step 1: Find the Correct PokemonDB Sprite URL
+
+Test potential URLs to find the working sprite:
+
+```bash
+# Test the most likely URL format
+curl -I "https://img.pokemondb.net/sprites/home/normal/pokemon-form.png"
+
+# Common patterns:
+# Alolan forms: ninetales-alolan.png
+# Bloodmoon forms: ursaluna-bloodmoon.png  
+# Family forms: maushold (uses base sprite)
+```
+
+### Step 2: Add Form Mapping in App.tsx
+
+In the `pokemonFormMap` object (around line 470), add the new form:
+
+```typescript
+// Find this section in getPokemonSpriteUrl function
+const pokemonFormMap: { [key: string]: string } = {
+  // ... existing forms ...
+  
+  // Add your new form here
+  'Pokemon-Form': 'pokemon-form-slug',
+  
+  // Examples:
+  'Ninetales-Alola': 'ninetales-alolan',
+  'Ursaluna-Bloodmoon': 'ursaluna-bloodmoon',
+  'Maushold-Four': 'maushold', // Uses base sprite
+};
+```
+
+### Step 3: Add Form to Text Extraction
+
+In the `extractPokemonFromText` function (around line 1260), add to `knownForms` array:
+
+```typescript
+const knownForms = [
+  // ... existing forms ...
+  'Pokemon-Form', // Add your new form here
+  
+  // Examples:
+  'Ninetales-Alola',
+  'Ursaluna-Bloodmoon', 
+  'Maushold-Four',
+];
+```
+
+### Step 4: Test the Changes
+
+1. Save the file and refresh the application
+2. Check that sprites display in:
+   - Team composition sections
+   - Gameplans section
+   - Matchup displays
+3. Verify the sprite loads correctly (not "?")
+
+### Step 5: Common Form Patterns
+
+| Form Type | Example | PokemonDB Slug Pattern |
+|-----------|---------|----------------------|
+| Alolan | Ninetales-Alola | `pokemon-alolan` |
+| Galarian | Rapidash-Galar | `pokemon-galarian` |
+| Bloodmoon | Ursaluna-Bloodmoon | `pokemon-bloodmoon` |
+| Family sizes | Maushold-Four | Use base `pokemon` |
+| Therian | Landorus-Therian | `pokemon-therian` |
+| Regional | Tauros-Paldea-Combat | `pokemon-paldea-combat` |
+
+### Troubleshooting
+
+- **404 errors**: Try different slug variations (alolan vs alola, combat vs fighting)
+- **Still showing "?"**: Check browser console for image loading errors
+- **Form not recognized**: Ensure it's added to both mapping locations
+- **Case sensitivity**: All form names should use proper capitalization
+
 ## 🔄 CI/CD
 
 - **CI**: Runs tests and linting on all PRs

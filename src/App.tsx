@@ -1246,10 +1246,28 @@ const extractPokemonFromText = (text: string): string[] => {
   const parts = text.split(/\s*[+/&]| and |,|\/\s*/i).map(part => part.trim()).filter(Boolean);
   const pokemonNames: string[] = [];
   parts.forEach(part => {
-    // Only match exact names (case-insensitive)
+    // First check for exact names in POKEMON_ID_MAP (case-insensitive)
     const found = Object.keys(POKEMON_ID_MAP).find(pokemon => pokemon.toLowerCase() === part.toLowerCase());
     if (found) {
       pokemonNames.push(found);
+      return;
+    }
+    
+    // Then check for Pokemon forms (need to recreate the form mapping here since it's defined in getPokemonSpriteUrl)
+    const knownForms = [
+      'Calyrex-Shadow', 'Calyrex-Ice',
+      'Urshifu-Single', 'Urshifu-Rapid', 'Urshifu-Rapid-Strike',
+      'Tornadus-Incarnate', 'Tornadus-Therian',
+      'Thundurus-Incarnate', 'Thundurus-Therian',
+      'Landorus-Incarnate', 'Landorus-Therian',
+      'Rotom-Heat', 'Rotom-Wash', 'Rotom-Frost', 'Rotom-Fan', 'Rotom-Mow',
+      'Maushold-Four', 'Maushold-Three',
+      'Ursaluna-Bloodmoon'
+    ];
+    
+    const formFound = knownForms.find(form => form.toLowerCase() === part.toLowerCase());
+    if (formFound) {
+      pokemonNames.push(formFound);
     }
   });
   return pokemonNames;

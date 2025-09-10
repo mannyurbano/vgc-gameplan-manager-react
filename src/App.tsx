@@ -2933,6 +2933,11 @@ const MatchupSelector: React.FC<{
                     }
                   }
                   
+                  // Also extract Pokemon names directly from damage calculation content
+                  Object.values(damageCalcs).forEach(calcContent => {
+                    allPokemonInMatchup.push(...extractPokemonFromText(calcContent));
+                  });
+                  
                   const uniquePokemon = Array.from(new Set(allPokemonInMatchup));
                   const calcsByPokemon: { [key: string]: { [key: string]: string } } = {};
                   
